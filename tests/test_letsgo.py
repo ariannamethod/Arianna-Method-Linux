@@ -92,8 +92,18 @@ def test_run_command_mock(monkeypatch):
     assert lines == ["...running", "done"]
 
 
-def test_clear_screen_returns_sequence():
-    assert letsgo.clear_screen() == "\033c"
+def test_clear_screen(monkeypatch):
+    calls: list[str] = []
+
+    def fake_system(cmd: str) -> None:
+        calls.append(cmd)
+
+    monkeypatch.setattr(letsgo.os, "system", fake_system)
+    monkeypatch.setattr(letsgo.os, "name", "posix")
+    assert letsgo.clear_screen() is None
+    monkeypatch.setattr(letsgo.os, "name", "nt")
+    assert letsgo.clear_screen() is None
+    assert calls == ["clear", "cls"]
 
 
 def test_history_last_n(tmp_path, monkeypatch):

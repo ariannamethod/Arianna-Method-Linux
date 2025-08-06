@@ -187,7 +187,10 @@ async def run_command(
                 await proc.communicate()
                 return color("command timed out", SETTINGS.red)
             try:
-                line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+                line = await asyncio.wait_for(
+                    proc.stdout.readline(),
+                    timeout=remaining,
+                )
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.communicate()
@@ -207,9 +210,9 @@ async def run_command(
         return color(str(exc), SETTINGS.red)
 
 
-def clear_screen() -> str:
-    """Return the control sequence that clears the terminal."""
-    return "\033c"
+def clear_screen() -> None:
+    """Clear the terminal screen using the system command."""
+    os.system("cls" if os.name == "nt" else "clear")
 
 
 def history(limit: int = 20) -> str:
@@ -312,7 +315,7 @@ async def handle_run(user: str) -> Tuple[str, str | None]:
 
 
 async def handle_clear(_: str) -> Tuple[str, str | None]:
-    os.system("clear")
+    clear_screen()
     return "", None
 
 
@@ -326,7 +329,8 @@ async def handle_history(user: str) -> Tuple[str, str | None]:
 
 
 async def handle_help(_: str) -> Tuple[str, str | None]:
-    lines = [f"{cmd} - {desc}" for cmd, (_, desc) in sorted(COMMAND_MAP.items())]
+    items = sorted(COMMAND_MAP.items())
+    lines = [f"{cmd} - {desc}" for cmd, (_, desc) in items]
     reply = "\n".join(lines)
     return reply, reply
 
