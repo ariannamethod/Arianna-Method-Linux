@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import os
 import socket
+import logging
+import atexit
 from datetime import datetime
 from pathlib import Path
 from collections import deque
@@ -16,11 +18,19 @@ LOG_DIR = ROOT_DIR / "log"
 SESSION_ID = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
 LOG_PATH = LOG_DIR / f"{SESSION_ID}.log"
 
+# Prepare log directory and handler once on module import
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+_LOGGER = logging.getLogger("assistant")
+_FILE_HANDLER = logging.FileHandler(LOG_PATH)
+_FILE_HANDLER.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+_LOGGER.addHandler(_FILE_HANDLER)
+_LOGGER.setLevel(logging.INFO)
+_LOGGER.propagate = False
+atexit.register(_FILE_HANDLER.close)
+
 
 def log(message: str) -> None:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    with LOG_PATH.open("a") as fh:
-        fh.write(f"{datetime.utcnow().isoformat()} {message}\n")
+    _LOGGER.info(message)
 
 
 def _first_ip() -> str:

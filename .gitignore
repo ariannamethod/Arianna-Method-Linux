@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+log/*.log
 arianna_core/kernel/linux-*
 arianna_core/alpine-minirootfs-*
 arianna_core/rootfs/
