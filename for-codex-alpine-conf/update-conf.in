@@ -2,7 +2,7 @@
 
 VERSION=@VERSION@
 PREFIX=@PREFIX@
-: ${LIBDIR=$PREFIX/lib}
+: ${LIBDIR=/usr/lib/alpine}
 . "$LIBDIR/libalpine.sh"
 
 # set up temp dir

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 PREFIX=@PREFIX@
-: ${LIBDIR=$PREFIX/lib}
+: ${LIBDIR=/usr/lib/alpine}
 . "$LIBDIR/libalpine.sh"
 
 usage() {

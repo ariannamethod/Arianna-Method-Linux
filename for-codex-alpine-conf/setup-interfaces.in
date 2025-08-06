@@ -2,7 +2,7 @@
 
 PROGRAM=setup-interfaces
 PREFIX=@PREFIX@
-: ${LIBDIR=$PREFIX/lib}
+: ${LIBDIR=/usr/lib/alpine}
 . "$LIBDIR/libalpine.sh"
 
 PKGS=

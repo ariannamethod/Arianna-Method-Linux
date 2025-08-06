@@ -2,7 +2,7 @@
 
 PROGRAM=setup-apkrepos
 PREFIX=@PREFIX@
-: ${LIBDIR=$PREFIX/lib}
+: ${LIBDIR=/usr/lib/alpine}
 . "$LIBDIR/libalpine.sh"
 
 : ${MIRRORS_URL:=https://mirrors.alpinelinux.org/mirrors.txt}

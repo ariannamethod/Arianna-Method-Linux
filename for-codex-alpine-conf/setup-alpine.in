@@ -4,7 +4,7 @@ PROGRAM=setup-alpine
 VERSION=@VERSION@
 
 PREFIX=@PREFIX@
-: ${LIBDIR=$PREFIX/lib}
+: ${LIBDIR=/usr/lib/alpine}
 . "$LIBDIR/libalpine.sh"
 
 if [ -t 1 ]; then

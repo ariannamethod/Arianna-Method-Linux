@@ -9,7 +9,7 @@
 # Copyright (c) 2014-2021 Kaarle Ritvanen
 
 PREFIX=@PREFIX@
-: ${LIBDIR=$PREFIX/lib}
+: ${LIBDIR=/usr/lib/alpine}
 . "$LIBDIR/libalpine.sh"
 
 SCRIPT=update-kernel

@@ -4,37 +4,28 @@ sysconfdir	?= /etc/lbu
 
 PREFIX		?=
 
-LIB_FILES	:= libalpine.sh dasd-functions.sh
-SBIN_FILES	:= copy-modloop\
-		lbu\
-		setup-acf\
-		setup-alpine\
-		setup-apkcache\
-		setup-apkrepos\
-		setup-bootable\
-		setup-desktop\
-		setup-devd\
-		setup-disk\
-		setup-dns\
-		setup-hostname\
-		setup-interfaces\
-		setup-keymap\
-		setup-lbu\
-		setup-mta\
-		setup-ntp\
-		setup-proxy\
-		setup-sshd\
-		setup-timezone\
-		setup-user\
-		setup-wayland-base\
-		setup-xen-dom0\
-		setup-xorg-base\
-		update-conf\
-		update-kernel
+LIB_FILES       := libalpine.sh dasd-functions.sh
+SETUP_SCRIPTS   := setup-alpine\
+	setup-apkcache\
+	setup-apkrepos\
+	setup-bootable\
+	setup-disk\
+	setup-dns\
+	setup-hostname\
+	setup-interfaces\
+	setup-keymap\
+	setup-lbu\
+	setup-proxy\
+	setup-sshd\
+	setup-timezone\
+	setup-user
+SBIN_FILES      := copy-modloop\
+	lbu\
+	update-conf\
+	update-kernel
+BIN_FILES       := uniso
 
-BIN_FILES	:= uniso
-
-SCRIPTS		:= $(LIB_FILES) $(SBIN_FILES)
+SCRIPTS         := $(LIB_FILES) $(SBIN_FILES) $(SETUP_SCRIPTS)
 
 ETC_LBU_FILES	:= lbu.conf
 
@@ -72,29 +63,37 @@ uniso:	uniso.c
 
 apk:	$(APKF)
 
-install: $(BIN_FILES) $(SBIN_FILES) $(LIB_FILES) $(ETC_LBU_FILES)
+install: $(BIN_FILES) $(SBIN_FILES) $(SETUP_SCRIPTS) $(LIB_FILES) $(ETC_LBU_FILES)
 	install -m 755 -d $(DESTDIR)/$(PREFIX)/bin
 	install -m 755 $(BIN_FILES) $(DESTDIR)$(PREFIX)/bin
 	install -m 755 -d $(DESTDIR)/$(PREFIX)/sbin
 	install -m 755 $(SBIN_FILES) $(DESTDIR)/$(PREFIX)/sbin
-	install -m 755 -d $(DESTDIR)/$(PREFIX)/lib
-	install -m 644 $(LIB_FILES) $(DESTDIR)/$(PREFIX)/lib
+	install -m 755 -d $(DESTDIR)/$(PREFIX)/usr/lib/alpine
+	install -m 644 $(LIB_FILES) $(DESTDIR)$(PREFIX)/usr/lib/alpine
+	install -m 755 $(SETUP_SCRIPTS) $(DESTDIR)$(PREFIX)/usr/lib/alpine
+	for i in $(SETUP_SCRIPTS); do \
+	ln -sf ../usr/lib/alpine/$$i $(DESTDIR)$(PREFIX)/sbin/$$i; \
+	done
 	install -m 755 -d $(DESTDIR)/$(sysconfdir)
 	install -m 644 $(ETC_LBU_FILES) $(DESTDIR)/$(sysconfdir)
 
 uninstall:
 	for i in $(BIN_FILES); do \
-		rm -f "$(DESTDIR)/$(PREFIX)/bin/$$i";\
+	rm -f "$(DESTDIR)/$(PREFIX)/bin/$$i"; \
 	done
 	for i in $(SBIN_FILES); do \
-		rm -f "$(DESTDIR)/$(PREFIX)/sbin/$$i";\
+	rm -f "$(DESTDIR)/$(PREFIX)/sbin/$$i"; \
+	done
+	for i in $(SETUP_SCRIPTS); do \
+	rm -f "$(DESTDIR)/$(PREFIX)/usr/lib/alpine/$$i"; \
+	rm -f "$(DESTDIR)/$(PREFIX)/sbin/$$i"; \
 	done
 	for i in $(LIB_FILES); do \
-		rm -f "$(DESTDIR)/$(PREFIX)/lib/$$i";\
+	rm -f "$(DESTDIR)/$(PREFIX)/usr/lib/alpine/$$i"; \
 	done
 	for i in $(ETC_LBU_FILES); do \
-		rm -f "$(DESTDIR)/$(sysconfdir)/$$i";\
-	done
+	rm -f "$(DESTDIR)/$(sysconfdir)/$$i"; \
+       done
 
 clean:
 	rm -rf $(SCRIPTS) $(BIN_FILES) alpine-conf.iso tests/Kyuafile Kyuafile

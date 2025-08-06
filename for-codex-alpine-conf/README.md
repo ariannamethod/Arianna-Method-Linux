@@ -14,10 +14,8 @@ This repo contains a set of utilities for making backup of config files and for 
 
 # Setup scripts
 
-The main script is called `setup-alpine`, and it will perform basic system setup. Each script can be called independently, for example:
+The main script is called `setup-alpine` and performs basic system setup.  Essential `setup-*` utilities and their supporting library `libalpine.sh` are installed under `/usr/lib/alpine/` with matching symlinks placed in `/sbin`.  This keeps the base system lean while still allowing the tools to be invoked in the traditional manner, e.g. `setup-alpine` or `setup-interfaces`.
 
-  * `setup-acf` sets up ACF web interface
-  * `setup-ntp` sets up NTP service
-  * etc.
+Only core configuration helpers are included; optional desktop or wayland setup modules are intentionally omitted to avoid pulling in heavyweight dependencies.
 
 For further information, please see <https://pkgs.alpinelinux.org/package/edge/main/x86_64/alpine-conf> or the Alpine Linux documentation wiki at <https://wiki.alpinelinux.org>.

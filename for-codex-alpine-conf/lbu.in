@@ -8,7 +8,7 @@ VERSION=@VERSION@
 sysconfdir=@sysconfdir@
 
 PREFIX=@PREFIX@
-: ${LIBDIR=$PREFIX/lib}
+: ${LIBDIR=/usr/lib/alpine}
 . "$LIBDIR/libalpine.sh"
 
 LBU_LIST="${ROOT}etc/apk/protected_paths.d/lbu.list"
