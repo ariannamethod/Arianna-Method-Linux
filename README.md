@@ -4,6 +4,8 @@
 
 🔹 This is not just a Linux kernel. Arianna Core is a compact AI-first kernel framework.
 
+The project deliberately targets CPU-only environments; GPU subsystems such as DRM and VGA arbitration are disabled in the kernel configuration to keep the image lean and deterministic on generic hardware.
+
 ## Continuous Integration
 
 The CI pipeline builds the kernel and boots it in QEMU using only CPU resources. GPU devices and drivers are absent, and QEMU
