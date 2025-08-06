@@ -59,3 +59,8 @@ As the project evolves, the assistant is expected to grow into a pluggable orche
 9. **Resource governance** – cgroups partition CPU and memory; mathematically they form a tree \(T\) whose edges carry weight limits, and processes are leaves consuming fractions of those weights.
 10. **Self-monitoring** – the system aspires to feedback loops where the assistant interprets its own logs, creating a recurrence relation \(x_{n+1} = f(x_n)\) pointing toward reflexive reasoning.
 
+
+## License
+
+Arianna Method Linux Kernel is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
+
