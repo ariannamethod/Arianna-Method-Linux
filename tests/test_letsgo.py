@@ -156,3 +156,4 @@ def test_help_lists_command_descriptions():
     output, _ = asyncio.run(letsgo.handle_help("/help"))
     assert "/clear" in output
     assert "clear the terminal screen" in output
+    assert "usage: /clear" in output
