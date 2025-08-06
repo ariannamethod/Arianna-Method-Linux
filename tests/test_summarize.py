@@ -24,3 +24,22 @@ def test_summarize_large_log(tmp_path, monkeypatch):
     result = letsgo.summarize("match")
     expected = "\n".join(lines[-5:])
     assert result == expected
+
+
+def test_tail_last_lines(tmp_path, monkeypatch):
+    log_file = tmp_path / "session.log"
+    lines = [str(i) for i in range(30)]
+    log_file.write_text("\n".join(lines) + "\n")
+    monkeypatch.setattr(letsgo, "LOG_PATH", log_file)
+    assert letsgo.tail().splitlines() == lines[-20:]
+    assert letsgo.tail(5).splitlines() == lines[-5:]
+
+
+def test_logsearch_across_files(tmp_path, monkeypatch):
+    log_dir = tmp_path / "log"
+    log_dir.mkdir()
+    _write_log(log_dir, "one", ["foo", "bar"])
+    _write_log(log_dir, "two", ["baz foo", "qux foo"])
+    monkeypatch.setattr(letsgo, "LOG_DIR", log_dir)
+    result = letsgo.logsearch("foo", 2)
+    assert result == "baz foo\nqux foo"

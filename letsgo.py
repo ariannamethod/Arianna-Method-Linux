@@ -206,6 +206,16 @@ def history(limit: int = 20) -> str:
     return "\n".join(lines[-limit:])
 
 
+def tail(limit: int = 20) -> str:
+    """Return the last ``limit`` lines from ``LOG_PATH``."""
+    try:
+        with LOG_PATH.open() as fh:
+            lines = [line.rstrip("\n") for line in fh]
+    except FileNotFoundError:
+        return "no log"
+    return "\n".join(lines[-limit:])
+
+
 def _iter_log_lines() -> Iterable[str]:
     """Yield log lines from all log files in order."""
     for file in sorted(LOG_DIR.glob("*.log")):
@@ -244,6 +254,11 @@ def summarize(
         if pattern is None or pattern.search(line):
             matches.append(line)
     return "\n".join(matches) if matches else "no matches"
+
+
+def logsearch(term: str, limit: int = 5) -> str:
+    """Search all log files for ``term`` and return the last ``limit`` matches."""
+    return summarize(term, limit, history=False)
 
 
 def search_history(pattern: str) -> str:
@@ -298,10 +313,18 @@ async def handle_history(user: str) -> Tuple[str, str | None]:
     return reply, reply
 
 
+async def handle_tail(user: str) -> Tuple[str, str | None]:
+    parts = user.split()
+    limit = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 20
+    reply = tail(limit)
+    return reply, reply
+
+
 async def handle_help(_: str) -> Tuple[str, str | None]:
     reply = (
         "Commands: /status, /time, /run <cmd>, "
         "/summarize [term [limit]] [--history], "
+        "/logsearch <term> [limit], /tail [N], "
         "/clear, /history [N], /search <pattern>\n"
         "Config: ~/.letsgo/config for prompt, colors, max_log_files"
     )
@@ -323,6 +346,20 @@ async def handle_summarize(user: str) -> Tuple[str, str | None]:
     return reply, reply
 
 
+async def handle_logsearch(user: str) -> Tuple[str, str | None]:
+    parts = user.split()[1:]
+    if not parts:
+        reply = "usage: /logsearch <term> [limit]"
+        return reply, reply
+    limit = 5
+    if parts[-1].isdigit():
+        limit = int(parts[-1])
+        parts = parts[:-1]
+    term = " ".join(parts)
+    reply = logsearch(term, limit)
+    return reply, reply
+
+
 async def handle_search(user: str) -> Tuple[str, str | None]:
     pattern = user.partition(" ")[2]
     reply = search_history(pattern)
@@ -336,6 +373,8 @@ def register_core(commands: List[str], handlers: Dict[str, Handler]) -> None:
             "/time",
             "/run",
             "/summarize",
+            "/logsearch",
+            "/tail",
             "/clear",
             "/history",
             "/help",
@@ -348,6 +387,8 @@ def register_core(commands: List[str], handlers: Dict[str, Handler]) -> None:
             "/time": handle_time,
             "/run": handle_run,
             "/summarize": handle_summarize,
+            "/logsearch": handle_logsearch,
+            "/tail": handle_tail,
             "/clear": handle_clear,
             "/history": handle_history,
             "/help": handle_help,
