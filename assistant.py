@@ -7,8 +7,10 @@ import os
 import socket
 from datetime import datetime
 from pathlib import Path
+import argparse
+import shlex
 from collections import deque
-from typing import Deque, Iterable
+from typing import Deque, Iterable, List
 
 # //: each session logs to its own file in the repository root
 ROOT_DIR = Path(__file__).resolve().parent
@@ -51,18 +53,33 @@ def _iter_log_lines() -> Iterable[str]:
     """Yield log lines from all log files in order."""
     for file in sorted(LOG_DIR.glob("*.log")):
         with file.open() as fh:
-            for line in fh:
-                yield line.rstrip("\n")
+            yield from (line.rstrip("\n") for line in fh)
+
+
+def _parse_summarize_args(args: List[str]) -> tuple[str | None, int]:
+    """Parse arguments for the ``/summarize`` command."""
+    parser = argparse.ArgumentParser(prog="/summarize", add_help=False)
+    parser.add_argument("term", nargs="*")
+    parser.add_argument("--limit", type=int, default=5)
+    try:
+        ns = parser.parse_args(args)
+    except SystemExit:
+        return None, 5
+    term = " ".join(ns.term) if ns.term else None
+    return term, ns.limit
 
 
 def summarize(term: str | None = None, limit: int = 5) -> str:
     """Return the last ``limit`` log lines matching ``term``."""
     if not LOG_DIR.exists():
         return "no logs"
-    matches: Deque[str] = deque(maxlen=limit)
-    for line in _iter_log_lines():
-        if term is None or term in line:
-            matches.append(line)
+
+    def _iter_matches() -> Iterable[str]:
+        for line in _iter_log_lines():
+            if term is None or term in line:
+                yield line
+
+    matches: Deque[str] = deque(_iter_matches(), maxlen=limit)
     return "\n".join(matches) if matches else "no matches"
 
 
@@ -80,12 +97,8 @@ def main() -> None:
         if user.strip() == "/status":
             reply = status()
         elif user.startswith("/summarize"):
-            parts = user.split()[1:]
-            limit = 5
-            if parts and parts[-1].isdigit():
-                limit = int(parts[-1])
-                parts = parts[:-1]
-            term = " ".join(parts) if parts else None
+            args = shlex.split(user)[1:]
+            term, limit = _parse_summarize_args(args)
             reply = summarize(term, limit)
         else:
             reply = f"echo: {user}"

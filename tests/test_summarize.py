@@ -24,3 +24,14 @@ def test_summarize_large_log(tmp_path, monkeypatch):
     result = assistant.summarize("match")
     expected = "\n".join(lines[-5:])
     assert result == expected
+
+
+def test_summarize_respects_limit(tmp_path, monkeypatch):
+    log_dir = tmp_path / "log"
+    log_dir.mkdir()
+    lines = [f"{i} match" for i in range(10)]
+    _write_log(log_dir, "small", lines)
+    monkeypatch.setattr(assistant, "LOG_DIR", log_dir)
+    result = assistant.summarize("match", limit=3)
+    expected = "\n".join(lines[-3:])
+    assert result == expected
