@@ -184,3 +184,9 @@ def test_handle_py_timeout(monkeypatch):
         assert colored.startswith("\033[31m")
     else:
         assert colored is not None
+
+
+def test_handle_edit_returns_token():
+    output, colored = asyncio.run(letsgo.handle_edit("edit foo.txt"))
+    assert output == "__EDIT__ foo.txt"
+    assert colored is None

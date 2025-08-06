@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+from pathlib import Path
 from typing import Dict
 
 from fastapi import (
@@ -12,6 +13,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel
 from telegram import (
     Update,
     BotCommand,
@@ -117,6 +119,22 @@ security = HTTPBasic()
 API_TOKEN = os.getenv("API_TOKEN", "change-me")
 RATE_LIMIT = float(os.getenv("RATE_LIMIT_SEC", "1"))
 _last_call: Dict[str, float] = {}
+BASE_PATH = Path(os.getenv("AMLK_FS_ROOT", ".")).resolve()
+
+
+class FilePath(BaseModel):
+    path: str
+
+
+class SaveFile(FilePath):
+    content: str
+
+
+def _safe_path(name: str) -> Path:
+    path = (BASE_PATH / name).resolve()
+    if not str(path).startswith(str(BASE_PATH)):
+        raise HTTPException(status_code=400, detail="invalid path")
+    return path
 
 
 def _check_rate(client: str) -> None:
@@ -135,6 +153,34 @@ async def run_command(
     _check_rate(credentials.username)
     output = await letsgo.run(cmd)
     return {"output": output}
+
+
+@app.post("/upload")
+async def upload_file(
+    req: FilePath, credentials: HTTPBasicCredentials = Depends(security)
+) -> Dict[str, str]:
+    if credentials.password != API_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    _check_rate(credentials.username)
+    path = _safe_path(req.path)
+    try:
+        content = path.read_text()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="file not found")
+    return {"content": content}
+
+
+@app.post("/save")
+async def save_file(
+    req: SaveFile, credentials: HTTPBasicCredentials = Depends(security)
+) -> Dict[str, str]:
+    if credentials.password != API_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    _check_rate(credentials.username)
+    path = _safe_path(req.path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(req.content)
+    return {"status": "ok"}
 
 
 @app.websocket("/ws")

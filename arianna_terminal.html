@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <title>Arianna Terminal</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.13/lib/codemirror.css" />
 <style>
   body { margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
   .frame { border: 1px solid #666; margin: 8px; flex: 1; }
@@ -28,6 +29,9 @@
   .close-tab { position: absolute; right: 4px; top: 2px; cursor: pointer; }
   #terminal-container { flex: 1; display: flex; }
   .hidden { display: none; }
+  .editor-container { display: flex; flex-direction: column; height: 100%; }
+  .editor-container .CodeMirror { flex: 1; }
+  .editor-controls { margin-bottom: 4px; }
 </style>
 </head>
 <body>
@@ -43,6 +47,7 @@
 </dialog>
 <div id="terminal-container"></div>
 <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.13/lib/codemirror.js"></script>
 <script>
 if (window.Telegram && window.Telegram.WebApp) {
   window.Telegram.WebApp.ready();
@@ -71,7 +76,12 @@ function connect(sid, term) {
     term.write('>> ');
   };
   ws.onmessage = ev => {
-    term.write('\r\n' + ev.data + '\r\n>> ');
+    if (ev.data.startsWith('__EDIT__ ')) {
+      openEditor(ev.data.slice(9));
+      term.write('\r\n>> ');
+    } else {
+      term.write('\r\n' + ev.data + '\r\n>> ');
+    }
   };
   ws.onclose = () => {
     setStatus('close');
@@ -161,6 +171,66 @@ function createSession(sid) {
     }
   });
   return sid;
+}
+
+async function openEditor(path) {
+  const token = localStorage.getItem('amlkToken');
+  if (!token) {
+    tokenDialog.showModal();
+    return;
+  }
+  const res = await fetch('/upload', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Basic ' + btoa('web:' + token),
+    },
+    body: JSON.stringify({ path }),
+  });
+  if (!res.ok) {
+    alert('failed to load');
+    return;
+  }
+  const data = await res.json();
+  const sid = 'edit-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now());
+  const el = document.createElement('div');
+  el.className = 'frame hidden editor-container';
+  const controls = document.createElement('div');
+  controls.className = 'editor-controls';
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'save';
+  controls.appendChild(saveBtn);
+  el.appendChild(controls);
+  const ta = document.createElement('textarea');
+  el.appendChild(ta);
+  container.appendChild(el);
+  const editor = CodeMirror.fromTextArea(ta, { lineNumbers: true });
+  editor.setValue(data.content);
+  saveBtn.addEventListener('click', async () => {
+    await fetch('/save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Basic ' + btoa('web:' + token),
+      },
+      body: JSON.stringify({ path, content: editor.getValue() }),
+    });
+  });
+  const tab = document.createElement('div');
+  tab.className = 'tab';
+  tab.textContent = path.split('/').pop();
+  const closeBtn = document.createElement('span');
+  closeBtn.textContent = '×';
+  closeBtn.className = 'close-tab';
+  closeBtn.addEventListener('click', ev => {
+    ev.stopPropagation();
+    removeSession(sid);
+  });
+  tab.appendChild(closeBtn);
+  tab.addEventListener('click', () => setActive(sid));
+  tabBar.appendChild(tab);
+  sessions[sid] = { tab, el, editor };
+  setActive(sid);
 }
 document.getElementById('new-tab').addEventListener('click', () => {
   setActive(createSession());

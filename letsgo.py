@@ -409,6 +409,14 @@ async def handle_color(user: str) -> Tuple[str, str | None]:
     return reply, color(reply, SETTINGS.green)
 
 
+async def handle_edit(user: str) -> Tuple[str, str | None]:
+    path = user.partition(" ")[2].strip()
+    if not path:
+        reply = "Usage: edit <path>"
+        return reply, reply
+    return f"__EDIT__ {path}", None
+
+
 CORE_COMMANDS: Dict[str, Tuple[Handler, str]] = {
     "/status": (handle_status, "show basic system metrics"),
     "/time": (handle_time, "show current UTC time"),
@@ -428,6 +436,10 @@ COMMAND_HANDLERS: Dict[str, Handler] = {
 }
 COMMANDS: List[str] = list(COMMAND_HANDLERS.keys())
 COMMAND_MAP: Dict[str, Tuple[Handler, str]] = dict(CORE_COMMANDS)
+
+COMMAND_HANDLERS["edit"] = handle_edit
+COMMANDS.append("edit")
+COMMAND_MAP["edit"] = (handle_edit, "request file edit")
 
 
 def register_core(commands: List[str], handlers: Dict[str, Handler]) -> None:
