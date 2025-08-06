@@ -53,3 +53,8 @@ def test_current_time_format():
 def test_run_command():
     output = letsgo.run_command("echo hello")
     assert output.strip() == "hello"
+
+
+def test_plugin_loaded():
+    assert "/greet" in letsgo.COMMAND_HANDLERS
+    assert letsgo.COMMAND_HANDLERS["/greet"]("") == "Hello from plugin"

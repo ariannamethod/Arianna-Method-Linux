@@ -9,10 +9,11 @@ import subprocess
 import sys
 import readline
 import atexit
+import importlib
 from datetime import datetime
 from pathlib import Path
 from collections import deque
-from typing import Deque, Iterable, List
+from typing import Callable, Deque, Iterable
 from dataclasses import dataclass
 
 _NO_COLOR_FLAG = "--no-color"
@@ -69,13 +70,11 @@ SESSION_ID = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
 LOG_PATH = LOG_DIR / f"{SESSION_ID}.log"
 HISTORY_PATH = LOG_DIR / "history"
 
-COMMANDS: List[str] = [
-    "/status",
-    "/time",
-    "/run",
-    "/summarize",
-    "/help",
-]
+COMMAND_HANDLERS: dict[str, Callable[[str], str]] = {}
+
+
+def register_command(name: str, handler: Callable[[str], str]) -> None:
+    COMMAND_HANDLERS[name] = handler
 
 
 def _ensure_log_dir() -> None:
@@ -157,6 +156,49 @@ def summarize(term: str | None = None, limit: int = 5) -> str:
     return "\n".join(matches) if matches else "no matches"
 
 
+# Register built-in commands
+register_command("/status", lambda _: color(status(), SETTINGS.green))
+register_command("/time", lambda _: current_time())
+register_command("/run", run_command)
+
+
+def _summarize_handler(args: str) -> str:
+    parts = args.split()
+    limit = 5
+    if parts and parts[-1].isdigit():
+        limit = int(parts[-1])
+        parts = parts[:-1]
+    term = " ".join(parts) if parts else None
+    return summarize(term, limit)
+
+
+register_command("/summarize", _summarize_handler)
+
+
+def _help_handler(_: str) -> str:
+    commands = ", ".join(sorted(COMMAND_HANDLERS))
+    return (
+        f"Commands: {commands}\n"
+        "Config: ~/.letsgo/config for prompt and colors"
+    )
+
+
+register_command("/help", _help_handler)
+
+
+def _load_plugins() -> None:
+    plugins_dir = Path(__file__).with_name("plugins")
+    if not plugins_dir.exists():
+        return
+    for file in plugins_dir.glob("*.py"):
+        if file.name.startswith("_"):
+            continue
+        importlib.import_module(f"plugins.{file.stem}")
+
+
+_load_plugins()
+
+
 def main() -> None:
     _ensure_log_dir()
     try:
@@ -166,7 +208,7 @@ def main() -> None:
     readline.parse_and_bind("tab: complete")
 
     def completer(text: str, state: int) -> str | None:
-        matches = [cmd for cmd in COMMANDS if cmd.startswith(text)]
+        matches = [cmd for cmd in COMMAND_HANDLERS if cmd.startswith(text)]
         return matches[state] if state < len(matches) else None
 
     readline.set_completer(completer)
@@ -182,35 +224,16 @@ def main() -> None:
         if user.strip().lower() in {"exit", "quit"}:
             break
         log(f"user:{user}")
-        if user.strip() == "/status":
-            reply = status()
-            colored = color(reply, SETTINGS.green)
-        elif user.strip() == "/time":
-            reply = current_time()
-            colored = reply
-        elif user.startswith("/run "):
-            reply = run_command(user.partition(" ")[2])
-            colored = reply
-        elif user.strip() == "/help":
-            reply = (
-                "Commands: /status, /time, /run <cmd>, "
-                "/summarize [term [limit]]\n"
-                "Config: ~/.letsgo/config for prompt and colors"
-            )
-            colored = reply
-        elif user.startswith("/summarize"):
-            parts = user.split()[1:]
-            limit = 5
-            if parts and parts[-1].isdigit():
-                limit = int(parts[-1])
-                parts = parts[:-1]
-            term = " ".join(parts) if parts else None
-            reply = summarize(term, limit)
-            colored = reply
+        if user.startswith("/"):
+            cmd, _, args = user.partition(" ")
+            handler = COMMAND_HANDLERS.get(cmd)
+            if handler is None:
+                reply = color(f"Unknown command: {cmd}", SETTINGS.red)
+            else:
+                reply = handler(args)
         else:
             reply = f"echo: {user}"
-            colored = reply
-        print(colored)
+        print(reply)
         log(f"letsgo:{reply}")
     log("session_end")
 
