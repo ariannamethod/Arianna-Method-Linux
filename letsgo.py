@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import socket
-import subprocess
 import sys
 import readline
 import atexit
@@ -78,16 +77,10 @@ SESSION_ID = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
 LOG_PATH = LOG_DIR / f"{SESSION_ID}.log"
 HISTORY_PATH = LOG_DIR / "history"
 
-COMMANDS: List[str] = [
-    "/status",
-    "/time",
-    "/run",
-    "/summarize",
-    "/clear",
-    "/history",
-    "/help",
-    "/search",
-]
+# Mapping between a command string and its handler function.
+# Each handler accepts the argument portion of the user input and returns a
+# string response.
+COMMAND_MAP: dict[str, Callable[[str], str]] = {}
 
 
 def _ensure_log_dir() -> None:
@@ -169,7 +162,9 @@ async def run_command(
                 await proc.communicate()
                 return color("command timed out", SETTINGS.red)
             try:
-                line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+                line = await asyncio.wait_for(
+                    proc.stdout.readline(), timeout=remaining
+                )
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.communicate()
@@ -259,7 +254,73 @@ def search_history(pattern: str) -> str:
     return "\n".join(matches) if matches else "no matches"
 
 
-async def main() -> None:
+# ---------------------------------------------------------------------------
+# Command handlers
+
+
+def _cmd_status(_: str) -> str:
+    return color(status(), SETTINGS.green)
+
+
+def _cmd_time(_: str) -> str:
+    return current_time()
+
+
+def _cmd_run(args: str) -> str:
+    return asyncio.run(run_command(args))
+
+
+def _cmd_summarize(args: str) -> str:
+    parts = args.split()
+    history_mode = False
+    if "--history" in parts:
+        parts.remove("--history")
+        history_mode = True
+    limit = 5
+    if parts and parts[-1].isdigit():
+        limit = int(parts[-1])
+        parts = parts[:-1]
+    term = " ".join(parts) if parts else None
+    return summarize(term, limit, history=history_mode)
+
+
+def _cmd_clear(_: str) -> str:
+    return clear_screen()
+
+
+def _cmd_history(arg: str) -> str:
+    limit = int(arg) if arg.strip().isdigit() else 20
+    return history(limit)
+
+
+def _cmd_help(_: str) -> str:
+    return (
+        "Commands: /status, /time, /run <cmd>, "
+        "/summarize [term [limit]] [--history], "
+        "/clear, /history [N], /search <pattern>\n"
+        "Config: ~/.letsgo/config for prompt, colors, max_log_files"
+    )
+
+
+def _cmd_search(pattern: str) -> str:
+    return search_history(pattern)
+
+
+# Register command handlers
+COMMAND_MAP["/status"] = _cmd_status
+COMMAND_MAP["/time"] = _cmd_time
+COMMAND_MAP["/run"] = _cmd_run
+COMMAND_MAP["/summarize"] = _cmd_summarize
+COMMAND_MAP["/clear"] = _cmd_clear
+COMMAND_MAP["/history"] = _cmd_history
+COMMAND_MAP["/help"] = _cmd_help
+COMMAND_MAP["/search"] = _cmd_search
+
+# List of commands for tab completion
+COMMANDS: List[str] = list(COMMAND_MAP)
+
+
+def main() -> None:
     _ensure_log_dir()
     try:
         readline.read_history_file(str(HISTORY_PATH))
@@ -293,75 +354,25 @@ async def main() -> None:
     print("LetsGo terminal ready. Type 'exit' to quit.")
     while True:
         try:
-            user = await asyncio.to_thread(
-                input, color(SETTINGS.prompt, SETTINGS.cyan)
-            )
+            user = input(color(SETTINGS.prompt, SETTINGS.cyan))
         except EOFError:
             break
         if user.strip().lower() in {"exit", "quit"}:
             break
         log(f"user:{user}")
-        if user.strip() == "/status":
-            reply = status()
-            colored = color(reply, SETTINGS.green)
-        elif user.strip() == "/time":
-            reply = current_time()
-            colored = reply
-        elif user.startswith("/run "):
-            lines: list[str] = []
-            def _cb(line: str) -> None:
-                lines.append(line)
-                print(line)
-
-            reply = await run_command(user.partition(" ")[2], _cb)
-            combined = "\n".join(lines).strip()
-            colored = reply if reply != combined else None
-            reply = reply if colored else combined
-        elif user.strip() == "/clear":
-            reply = clear_screen()
-            colored = reply
-        elif user.startswith("/history"):
-            parts = user.split()
-            limit = (
-                int(parts[1])
-                if len(parts) > 1 and parts[1].isdigit()
-                else 20
-            )
-            reply = history(limit)
-            colored = reply
-        elif user.strip() == "/help":
-            reply = (
-                "Commands: /status, /time, /run <cmd>, "
-                "/summarize [term [limit]] [--history], "
-                "/clear, /history [N], /search <pattern>\n"
-                "Config: ~/.letsgo/config for prompt, colors, max_log_files"
-            )
-            colored = reply
-        elif user.startswith("/summarize"):
-            parts = user.split()[1:]
-            history_mode = False
-            if "--history" in parts:
-                parts.remove("--history")
-                history_mode = True
-            limit = 5
-            if parts and parts[-1].isdigit():
-                limit = int(parts[-1])
-                parts = parts[:-1]
-            term = " ".join(parts) if parts else None
-            reply = summarize(term, limit, history=history_mode)
-            colored = reply
-        elif user.startswith("/search "):
-            pattern = user.partition(" ")[2]
-            reply = search_history(pattern)
-            colored = reply
+        if user.startswith("/"):
+            cmd, _, args = user.partition(" ")
+            handler = COMMAND_MAP.get(cmd)
+            if handler:
+                reply = handler(args)
+            else:
+                reply = color(f"unknown command: {cmd}", SETTINGS.red)
         else:
             reply = f"echo: {user}"
-            colored = reply
-        if colored is not None:
-            print(colored)
+        print(reply)
         log(f"letsgo:{reply}")
     log("session_end")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
