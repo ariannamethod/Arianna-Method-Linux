@@ -54,7 +54,7 @@ class Settings:
     cyan: str = "\033[36m"
     reset: str = "\033[0m"
     max_log_files: int = 100
-    command_timeout: int = 10
+    command_timeout: int = 10  # default seconds for shell commands
 
 
 def _load_settings(path: Path = CONFIG_PATH) -> Settings:
@@ -160,7 +160,7 @@ async def async_input(prompt: str) -> str:
 async def run_command(
     command: str,
     on_line: Callable[[str], None] | None = None,
-    timeout: int = 10,
+    timeout: int = SETTINGS.command_timeout,
 ) -> str:
     """Execute ``command`` and return its output.
 
@@ -306,7 +306,7 @@ async def handle_run(user: str) -> Tuple[str, str | None]:
         lines.append(line)
         print(line)
 
-    reply = await run_command(command, _cb, SETTINGS.command_timeout)
+    reply = await run_command(command, _cb)
     combined = "\n".join(lines).strip()
     colored = reply if reply != combined else None
     reply = reply if colored else combined
