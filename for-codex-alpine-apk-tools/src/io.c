@@ -525,16 +525,18 @@ int apk_file_get_info(int atfd, const char *filename, unsigned int flags,
 
 	bs = apk_bstream_from_file(atfd, filename);
 	if (bs != NULL) {
-		EVP_MD_CTX mdctx;
-		apk_blob_t blob;
+               EVP_MD_CTX *mdctx;
+               apk_blob_t blob;
 
-		EVP_DigestInit(&mdctx, apk_checksum_evp(checksum));
-		if (bs->flags & APK_BSTREAM_SINGLE_READ)
-			EVP_MD_CTX_set_flags(&mdctx, EVP_MD_CTX_FLAG_ONESHOT);
-		while (!APK_BLOB_IS_NULL(blob = bs->read(bs, APK_BLOB_NULL)))
-			EVP_DigestUpdate(&mdctx, (void*) blob.ptr, blob.len);
-		fi->csum.type = EVP_MD_CTX_size(&mdctx);
-		EVP_DigestFinal(&mdctx, fi->csum.data, NULL);
+               mdctx = EVP_MD_CTX_new();
+               EVP_DigestInit(mdctx, apk_checksum_evp(checksum));
+               if (bs->flags & APK_BSTREAM_SINGLE_READ)
+                       EVP_MD_CTX_set_flags(mdctx, EVP_MD_CTX_FLAG_ONESHOT);
+               while (!APK_BLOB_IS_NULL(blob = bs->read(bs, APK_BLOB_NULL)))
+                       EVP_DigestUpdate(mdctx, (void*) blob.ptr, blob.len);
+               fi->csum.type = EVP_MD_CTX_size(mdctx);
+               EVP_DigestFinal(mdctx, fi->csum.data, NULL);
+               EVP_MD_CTX_free(mdctx);
 
 		bs->close(bs, NULL);
 	}

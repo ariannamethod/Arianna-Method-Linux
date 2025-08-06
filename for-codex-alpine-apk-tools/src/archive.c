@@ -21,6 +21,7 @@
 #include <sysexits.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <limits.h>
 #include <stdint.h>
 
@@ -81,7 +82,7 @@ struct apk_tar_entry_istream {
 	struct apk_istream is;
 	struct apk_istream *tar_is;
 	size_t bytes_left;
-	EVP_MD_CTX mdctx;
+       EVP_MD_CTX *mdctx;
 	struct apk_checksum *csum;
 };
 
@@ -104,10 +105,10 @@ static ssize_t tar_entry_read(void *stream, void *ptr, size_t size)
 	if (teis->csum == NULL)
 		return r;
 
-	EVP_DigestUpdate(&teis->mdctx, ptr, r);
-	if (teis->bytes_left == 0) {
-		teis->csum->type = EVP_MD_CTX_size(&teis->mdctx);
-		EVP_DigestFinal_ex(&teis->mdctx, teis->csum->data, NULL);
+       EVP_DigestUpdate(teis->mdctx, ptr, r);
+       if (teis->bytes_left == 0) {
+               teis->csum->type = EVP_MD_CTX_size(teis->mdctx);
+               EVP_DigestFinal_ex(teis->mdctx, teis->csum->data, NULL);
 	}
 	return r;
 }
@@ -133,7 +134,7 @@ int apk_tar_parse(struct apk_istream *is, apk_archive_entry_parser parser,
 
 	odi = (struct apk_tar_digest_info *) &buf.linkname[3];
 	di  = (struct apk_tar_digest_info *) &buf.devmajor[0];
-	EVP_MD_CTX_init(&teis.mdctx);
+       teis.mdctx = EVP_MD_CTX_new();
 	memset(&entry, 0, sizeof(entry));
 	while ((r = is->read(is, &buf, 512)) == 512) {
 		offset += 512;
@@ -223,8 +224,8 @@ int apk_tar_parse(struct apk_istream *is, apk_archive_entry_parser parser,
 
 			/* callback parser function */
 			if (teis.csum != NULL)
-				EVP_DigestInit_ex(&teis.mdctx,
-						  apk_checksum_default(), NULL);
+                               EVP_DigestInit_ex(teis.mdctx,
+                                                 apk_checksum_default(), NULL);
 
 			r = parser(ctx, &entry, &teis.is);
 			free(entry.name);
@@ -242,7 +243,7 @@ int apk_tar_parse(struct apk_istream *is, apk_archive_entry_parser parser,
 		if (toskip != 0)
 			is->read(is, NULL, toskip);
 	}
-	EVP_MD_CTX_cleanup(&teis.mdctx);
+       EVP_MD_CTX_free(teis.mdctx);
 
 	/* Read remaining end-of-archive records, to ensure we read all of
 	 * the file. The underlying istream is likely doing checksumming. */
@@ -260,7 +261,7 @@ int apk_tar_parse(struct apk_istream *is, apk_archive_entry_parser parser,
 	return r;
 
 err:
-	EVP_MD_CTX_cleanup(&teis.mdctx);
+       EVP_MD_CTX_free(teis.mdctx);
 	return r;
 }
 
@@ -279,11 +280,11 @@ int apk_tar_write_entry(struct apk_ostream *os, const struct apk_file_info *ae,
 		else
 			return -1;
 
-		if (ae->name != NULL)
-			strncpy(buf.name, ae->name, sizeof(buf.name));
+               if (ae->name != NULL)
+                       strncpy(buf.name, ae->name, sizeof(buf.name) - 1);
 
-		strncpy(buf.uname, ae->uname ?: "root", sizeof(buf.uname));
-		strncpy(buf.gname, ae->gname ?: "root", sizeof(buf.gname));
+               strncpy(buf.uname, ae->uname ?: "root", sizeof(buf.uname) - 1);
+               strncpy(buf.gname, ae->gname ?: "root", sizeof(buf.gname) - 1);
 
 		PUT_OCTAL(buf.size, ae->size);
 		PUT_OCTAL(buf.uid, ae->uid);

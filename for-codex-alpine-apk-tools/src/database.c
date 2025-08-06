@@ -21,6 +21,7 @@
 #include <fnmatch.h>
 #include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 
 #include "apk_defines.h"
 #include "apk_package.h"
@@ -2056,8 +2057,9 @@ static int apk_db_unpack_pkg(struct apk_database *db,
 				need_copy = TRUE;
 		}
 	} else {
-		bs = apk_bstream_from_file(AT_FDCWD, pkg->filename);
-		strncpy(file, pkg->filename, sizeof(file));
+               bs = apk_bstream_from_file(AT_FDCWD, pkg->filename);
+               strncpy(file, pkg->filename, sizeof(file) - 1);
+               file[sizeof(file) - 1] = '\0';
 		need_copy = TRUE;
 	}
 	if (!apk_db_cache_active(db))
