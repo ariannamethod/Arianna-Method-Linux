@@ -66,6 +66,14 @@ if [ ! -f acroot/.unpacked ]; then
   touch acroot/.unpacked
 fi
 
+# //: build and install Alpine configuration utilities (CPU-only)
+make -C "$ROOT_DIR/for-codex-alpine-conf"
+make -C "$ROOT_DIR/for-codex-alpine-conf" install PREFIX=/usr DESTDIR="$SCRIPT_DIR/acroot"
+rm -f \
+  acroot/usr/sbin/setup-desktop \
+  acroot/usr/sbin/setup-wayland-base \
+  acroot/usr/sbin/setup-xorg-base
+
 # //: build and stage patched apk-tools
 APK_BIN="$("$SCRIPT_DIR/build_apk_tools.sh")"
 install -Dm755 "$APK_BIN" acroot/usr/bin/apk
