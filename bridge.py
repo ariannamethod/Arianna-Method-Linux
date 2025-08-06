@@ -6,7 +6,9 @@ from typing import Dict
 from fastapi import (
     Depends,
     FastAPI,
+    File,
     HTTPException,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -135,6 +137,22 @@ async def run_command(
     _check_rate(credentials.username)
     output = await letsgo.run(cmd)
     return {"output": output}
+
+
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    credentials: HTTPBasicCredentials = Depends(security),
+) -> Dict[str, str]:
+    if credentials.password != API_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    _check_rate(credentials.username)
+    os.makedirs("uploads", exist_ok=True)
+    dest = os.path.join("uploads", file.filename)
+    contents = await file.read()
+    with open(dest, "wb") as f:
+        f.write(contents)
+    return {"filename": file.filename}
 
 
 @app.websocket("/ws")

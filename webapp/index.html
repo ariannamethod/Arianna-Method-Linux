@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Arianna WebApp</title>
+  <link rel="stylesheet" href="https://unpkg.com/xterm/css/xterm.css" />
+  <style>
+    body,html { height:100%; margin:0; }
+    #tabs { display:flex; background:#eee; }
+    #tabs button { padding:0.5em; margin-right:0.2em; }
+    #terminals { height:calc(100% - 40px); position:relative; }
+    .terminal { display:none; height:100%; }
+    .terminal.active { display:block; }
+  </style>
+</head>
+<body>
+  <div id="tabs"></div>
+  <div id="terminals"></div>
+  <script src="https://unpkg.com/xterm/lib/xterm.js"></script>
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+
+    const token = tg.initDataUnsafe?.query_id || '';
+    const username = tg.initDataUnsafe?.user?.username || 'user';
+
+    const tabs = document.getElementById('tabs');
+    const container = document.getElementById('terminals');
+    let sessions = JSON.parse(localStorage.getItem('sessions') || '{}');
+
+    function saveSessions() {
+      localStorage.setItem('sessions', JSON.stringify(sessions));
+    }
+
+    function createTab(id) {
+      const btn = document.createElement('button');
+      btn.textContent = 'Tab ' + (Object.keys(sessions).length + 1);
+      tabs.appendChild(btn);
+
+      const termDiv = document.createElement('div');
+      termDiv.className = 'terminal';
+      container.appendChild(termDiv);
+
+      const term = new Terminal();
+      term.open(termDiv);
+      term.focus();
+
+      const ws = new WebSocket(`ws://${location.host}/ws?token=${token}&sid=${id}`);
+      ws.onmessage = (e) => term.write(e.data + '\r\n');
+      term.onData(d => ws.send(d));
+
+      function activate() {
+        document.querySelectorAll('.terminal').forEach(el => el.classList.remove('active'));
+        termDiv.classList.add('active');
+      }
+      btn.addEventListener('click', activate);
+      if (Object.keys(sessions).length === 0) { activate(); }
+
+      sessions[id] = { id, script: '' };
+      term.onData(data => { sessions[id].script += data; });
+      saveSessions();
+    }
+
+    if (Object.keys(sessions).length === 0) {
+      createTab(crypto.randomUUID());
+    } else {
+      Object.keys(sessions).forEach(id => createTab(id));
+    }
+
+    document.addEventListener('dragover', e => e.preventDefault());
+    document.addEventListener('drop', async e => {
+      e.preventDefault();
+      if (!e.dataTransfer?.files?.length) return;
+      const file = e.dataTransfer.files[0];
+      const form = new FormData();
+      form.append('file', file);
+      await fetch('/upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Basic ' + btoa(`${username}:${token}`) },
+        body: form,
+      });
+    });
+
+    async function saveScript(name, content) {
+      if (tg.files) {
+        await tg.files.save({ name, content });
+      }
+    }
+
+    window.addEventListener('beforeunload', async () => {
+      saveSessions();
+      for (const id of Object.keys(sessions)) {
+        await saveScript(`session-${id}.txt`, sessions[id].script);
+      }
+    });
+  </script>
+</body>
+</html>
