@@ -12,21 +12,13 @@ import atexit
 from datetime import datetime
 from pathlib import Path
 from collections import deque
-from typing import Deque, Iterable, List
+from typing import Callable, Deque, Dict, Iterable
 
 # //: each session logs to its own file under a fixed directory
 LOG_DIR = Path("/arianna_core/log")
 SESSION_ID = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
 LOG_PATH = LOG_DIR / f"{SESSION_ID}.log"
 HISTORY_PATH = LOG_DIR / "history"
-
-COMMANDS: List[str] = [
-    "/status",
-    "/time",
-    "/run",
-    "/summarize",
-    "/help",
-]
 
 
 def _ensure_log_dir() -> None:
@@ -51,7 +43,8 @@ def _setup_readline() -> None:
     readline.parse_and_bind("tab: complete")
 
     def completer(text: str, state: int) -> str | None:
-        matches = [cmd for cmd in COMMANDS if cmd.startswith(text)]
+        prefix = text.lstrip("/")
+        matches = [f"/{cmd}" for cmd in COMMANDS if cmd.startswith(prefix)]
         return matches[state] if state < len(matches) else None
 
     readline.set_completer(completer)
@@ -123,6 +116,32 @@ def summarize(term: str | None = None, limit: int = 5) -> str:
     return "\n".join(matches) if matches else "no matches"
 
 
+def help_cmd() -> str:
+    return "Commands: /status, /time, /run <cmd>, /summarize [term [limit]]"
+
+
+def run_cmd(*args: str) -> str:
+    return run_command(" ".join(args))
+
+
+def summarize_cmd(*args: str) -> str:
+    limit = 5
+    if args and args[-1].isdigit():
+        limit = int(args[-1])
+        args = args[:-1]
+    term = " ".join(args) if args else None
+    return summarize(term, limit)
+
+
+COMMANDS: Dict[str, Callable[..., str]] = {
+    "status": status,
+    "time": current_time,
+    "run": run_cmd,
+    "summarize": summarize_cmd,
+    "help": help_cmd,
+}
+
+
 def main() -> None:
     _ensure_log_dir()
     _setup_readline()
@@ -136,27 +155,13 @@ def main() -> None:
         if user.strip().lower() in {"exit", "quit"}:
             break
         log(f"user:{user}")
-        if user.strip() == "/status":
-            reply = status()
-        elif user.strip() == "/time":
-            reply = current_time()
-        elif user.startswith("/run "):
-            reply = run_command(user.partition(" ")[2])
-        elif user.strip() == "/help":
-            reply = (
-                "Commands: /status, /time, /run <cmd>, "
-                "/summarize [term [limit]]"
-            )
-        elif user.startswith("/summarize"):
-            parts = user.split()[1:]
-            limit = 5
-            if parts and parts[-1].isdigit():
-                limit = int(parts[-1])
-                parts = parts[:-1]
-            term = " ".join(parts) if parts else None
-            reply = summarize(term, limit)
-        else:
-            reply = f"echo: {user}"
+        parts = user.strip().split()
+        if not parts:
+            continue
+        cmd = parts[0].lstrip("/")
+        args = parts[1:]
+        func = COMMANDS.get(cmd)
+        reply = func(*args) if func else f"echo: {user}"
         print(reply)
         log(f"letsgo:{reply}")
     log("session_end")
