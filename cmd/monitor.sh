@@ -7,13 +7,16 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$ROOT_DIR/log"
 
 mkdir -p "$LOG_DIR"
-# Wait for at least one log file to exist before tailing
+
+# Ensure at least one log file exists so tail doesn't exit immediately
 shopt -s nullglob
 log_files=("$LOG_DIR"/*.log)
-while [ ${#log_files[@]} -eq 0 ]; do
-  echo "Waiting for logs in $LOG_DIR..."
-  sleep 1
-  log_files=("$LOG_DIR"/*.log)
-done
 shopt -u nullglob
-tail -f "$LOG_DIR"/*.log
+
+if [ ${#log_files[@]} -eq 0 ]; then
+  echo "No log files found in $LOG_DIR. Creating placeholder log."
+  placeholder="$LOG_DIR/placeholder.log"
+  : > "$placeholder"
+fi
+
+tail -F "$LOG_DIR"/*.log || true
