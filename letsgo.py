@@ -11,6 +11,7 @@ import atexit
 import asyncio
 import importlib
 import pkgutil
+import ctypes
 from datetime import datetime
 from pathlib import Path
 from collections import deque
@@ -179,7 +180,10 @@ async def run_command(
                 await proc.communicate()
                 return color("command timed out", SETTINGS.red)
             try:
-                line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+                line = await asyncio.wait_for(
+                    proc.stdout.readline(),
+                    timeout=remaining,
+                )
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.communicate()
@@ -307,7 +311,9 @@ async def handle_history(user: str) -> Tuple[str, str | None]:
 
 
 async def handle_help(_: str) -> Tuple[str, str | None]:
-    lines = [f"{cmd} - {desc}" for cmd, (_, desc) in sorted(COMMAND_MAP.items())]
+    lines: List[str] = []
+    for cmd, (_, desc) in sorted(COMMAND_MAP.items()):
+        lines.append(f"{cmd} - {desc}")
     reply = "\n".join(lines)
     return reply, reply
 
@@ -372,24 +378,25 @@ async def main() -> None:
     _load_plugins(COMMANDS, COMMAND_HANDLERS)
 
     readline.parse_and_bind("tab: complete")
+    # Allow '/' to be part of file paths during completion
+    delims = readline.get_completer_delims().replace("/", "")
+    readline.set_completer_delims(delims)
+
+    # Access readline's built-in filename completion
+    _rl = ctypes.CDLL(readline.__file__)
+    _file_complete = _rl.rl_filename_completion_function
+    _file_complete.argtypes = [ctypes.c_char_p, ctypes.c_int]
+    _file_complete.restype = ctypes.c_char_p
+
+    def _filename_completer(text: str, state: int) -> str | None:
+        result = _file_complete(text.encode(), state)
+        return result.decode() if result else None
 
     def completer(text: str, state: int) -> str | None:
         buffer = readline.get_line_buffer()
         if buffer.startswith("/run "):
-            path = Path(text)
-            directory = path.parent if path.parent != Path(".") else Path(".")
-            try:
-                entries = os.listdir(directory)
-            except OSError:
-                matches: list[str] = []
-            else:
-                matches = [
-                    str(directory / entry) if directory != Path(".") else entry
-                    for entry in entries
-                    if entry.startswith(path.name)
-                ]
-        else:
-            matches = [cmd for cmd in COMMANDS if cmd.startswith(text)]
+            return _filename_completer(text, state)
+        matches = [cmd for cmd in COMMANDS if cmd.startswith(text)]
         return matches[state] if state < len(matches) else None
 
     readline.set_completer(completer)
