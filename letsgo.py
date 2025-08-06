@@ -164,6 +164,7 @@ async def run_command(
     becomes available. A 10‑second timeout is enforced and any error output is
     colored red.
     """
+    proc: asyncio.subprocess.Process | None = None
     try:
         if on_line:
             on_line("...running")
@@ -175,33 +176,40 @@ async def run_command(
         output_lines: list[str] = []
         loop = asyncio.get_running_loop()
         start = loop.time()
-        while True:
-            remaining = 10 - (loop.time() - start)
-            if remaining <= 0:
-                proc.kill()
-                await proc.communicate()
-                return color("command timed out", SETTINGS.red)
-            try:
-                line = await asyncio.wait_for(
-                    proc.stdout.readline(),
-                    timeout=remaining,
-                )
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.communicate()
-                return color("command timed out", SETTINGS.red)
-            if not line:
-                break
-            decoded = line.decode().rstrip()
-            output_lines.append(decoded)
-            if on_line:
-                on_line(decoded)
+        try:
+            while True:
+                remaining = 10 - (loop.time() - start)
+                if remaining <= 0:
+                    proc.kill()
+                    await proc.communicate()
+                    return color("command timed out", SETTINGS.red)
+                try:
+                    line = await asyncio.wait_for(
+                        proc.stdout.readline(),
+                        timeout=remaining,
+                    )
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    await proc.communicate()
+                    return color("command timed out", SETTINGS.red)
+                if not line:
+                    break
+                decoded = line.decode().rstrip()
+                output_lines.append(decoded)
+                if on_line:
+                    on_line(decoded)
+        except asyncio.CancelledError:
+            proc.kill()
+            await proc.communicate()
+            raise
         rc = await proc.wait()
         output = "\n".join(output_lines).strip()
         if rc != 0:
             return color(output, SETTINGS.red)
         return output
     except Exception as exc:
+        if isinstance(exc, asyncio.CancelledError):
+            raise
         return color(str(exc), SETTINGS.red)
 
 
@@ -295,16 +303,21 @@ async def handle_time(_: str) -> Tuple[str, str | None]:
 
 
 async def handle_run(user: str) -> Tuple[str, str | None]:
-    command = user.partition(" ")[2]
+    parts = user.split()
+    stream = len(parts) > 1 and parts[1] == "-stream"
+    command = " ".join(parts[2:] if stream else parts[1:])
     lines: list[str] = []
 
     def _cb(line: str) -> None:
         lines.append(line)
-        print(line)
+        if stream:
+            print(line)
 
     reply = await run_command(command, _cb)
     combined = "\n".join(lines).strip()
     colored = reply if reply != combined else None
+    if stream:
+        return "", colored
     reply = reply if colored else combined
     return reply, colored
 

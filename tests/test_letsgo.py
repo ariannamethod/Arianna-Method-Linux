@@ -3,6 +3,7 @@ import re
 import sys
 from pathlib import Path
 import asyncio
+import pytest
 
 from tests.utils import _write_log
 
@@ -81,6 +82,40 @@ def test_run_command_mock(monkeypatch):
     output = asyncio.run(letsgo.run_command("whatever", _cb))
     assert output == "done"
     assert lines == ["...running", "done"]
+
+
+def test_run_command_cancel(monkeypatch):
+    killed = {"value": False}
+
+    class DummyProcess:
+        def __init__(self):
+            self.stdout = asyncio.StreamReader()
+
+        async def wait(self):
+            return 0
+
+        def kill(self):
+            killed["value"] = True
+
+        async def communicate(self):
+            return b"", b""
+
+    async def fake_create_subprocess_shell(cmd, stdout=None, stderr=None):
+        return DummyProcess()
+
+    monkeypatch.setattr(
+        asyncio, "create_subprocess_shell", fake_create_subprocess_shell
+    )
+
+    async def run_and_cancel():
+        task = asyncio.create_task(letsgo.run_command("sleep 5"))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run_and_cancel())
+    assert killed["value"]
 
 
 def test_clear_screen_returns_sequence():

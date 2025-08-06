@@ -7,7 +7,9 @@ from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconn
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from letsgo import run_command as exec_command
 import uvicorn
 
 PROMPT = ">>"
@@ -109,10 +111,60 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 
 async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    cmd = update.message.text if update.message else ""
-    if not cmd:
+    text = update.message.text if update.message else ""
+    if not text:
         return
-    output = await letsgo.run(cmd)
+    if text.startswith("/run"):
+        parts = text.split()
+        stream = len(parts) > 1 and parts[1] == "-stream"
+        command = " ".join(parts[2:] if stream else parts[1:])
+        if not command:
+            await update.message.reply_text("Usage: /run [-stream] <command>")
+            return
+        if stream:
+            sent = None
+            lines: list[str] = []
+            task: asyncio.Task[str] | None = None
+            cancelled = False
+
+            def _cb(line: str) -> None:
+                async def send() -> None:
+                    nonlocal sent, cancelled
+                    lines.append(line)
+                    text_out = "\n".join(lines)
+                    try:
+                        if sent is None:
+                            sent = await update.message.reply_text(text_out)
+                        else:
+                            await sent.edit_text(text_out)
+                    except TelegramError:
+                        cancelled = True
+                        if task:
+                            task.cancel()
+
+                asyncio.create_task(send())
+
+            task = asyncio.create_task(exec_command(command, _cb))
+            try:
+                output = await task
+                if not cancelled and sent is not None:
+                    try:
+                        await sent.edit_text(output)
+                    except TelegramError:
+                        pass
+            except asyncio.CancelledError:
+                if sent is not None:
+                    try:
+                        await sent.edit_text("cancelled")
+                    except TelegramError:
+                        pass
+            return
+
+        output = await exec_command(command)
+        await update.message.reply_text(output)
+        return
+
+    output = await letsgo.run(text)
     await update.message.reply_text(output)
 
 
