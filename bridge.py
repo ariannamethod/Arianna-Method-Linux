@@ -1,7 +1,9 @@
 import asyncio
 import os
 import time
+from pathlib import Path
 from typing import Dict
+from uuid import uuid4
 
 from fastapi import (
     Depends,
@@ -9,8 +11,11 @@ from fastapi import (
     HTTPException,
     WebSocket,
     WebSocketDisconnect,
+    UploadFile,
+    File,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from telegram import (
     Update,
@@ -113,6 +118,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.mount("/photos", StaticFiles(directory="photos"), name="photos")
 security = HTTPBasic()
 API_TOKEN = os.getenv("API_TOKEN", "change-me")
 RATE_LIMIT = float(os.getenv("RATE_LIMIT_SEC", "1"))
@@ -135,6 +141,24 @@ async def run_command(
     _check_rate(credentials.username)
     output = await letsgo.run(cmd)
     return {"output": output}
+
+
+@app.post("/photo")
+async def upload_photo(
+    photo: UploadFile = File(...),
+    credentials: HTTPBasicCredentials = Depends(security),
+) -> Dict[str, str]:
+    if credentials.password != API_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    _check_rate(credentials.username)
+    photos_dir = Path("photos")
+    photos_dir.mkdir(parents=True, exist_ok=True)
+    ext = os.path.splitext(photo.filename)[1] or ".jpg"
+    pid = uuid4().hex
+    dest = photos_dir / f"{pid}{ext}"
+    content = await photo.read()
+    dest.write_bytes(content)
+    return {"id": pid, "url": f"/photos/{dest.name}"}
 
 
 @app.websocket("/ws")

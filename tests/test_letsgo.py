@@ -184,3 +184,16 @@ def test_handle_py_timeout(monkeypatch):
         assert colored.startswith("\033[31m")
     else:
         assert colored is not None
+
+
+def test_show_photo(tmp_path, monkeypatch):
+    photos = tmp_path / "photos"
+    photos.mkdir()
+    p = photos / "abc.jpg"
+    p.write_bytes(b"data")
+    monkeypatch.setattr(letsgo, "PHOTO_DIR", photos)
+    output, colored = asyncio.run(letsgo.handle_show("show photo abc"))
+    assert p.name in output
+    assert colored == output
+    missing, _ = asyncio.run(letsgo.handle_show("show photo missing"))
+    assert "not found" in missing

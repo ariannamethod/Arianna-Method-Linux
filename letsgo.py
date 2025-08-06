@@ -96,6 +96,7 @@ HISTORY_PATH = LOG_DIR / "history"
 PY_TIMEOUT = 5
 
 ERROR_LOG_PATH = LOG_DIR / "errors.log"
+PHOTO_DIR = Path("photos")
 
 Handler = Callable[[str], Awaitable[Tuple[str, str | None]]]
 
@@ -409,6 +410,20 @@ async def handle_color(user: str) -> Tuple[str, str | None]:
     return reply, color(reply, SETTINGS.green)
 
 
+async def handle_show(user: str) -> Tuple[str, str | None]:
+    parts = user.split()
+    if len(parts) != 3 or parts[1] != "photo":
+        reply = "Usage: show photo <id>"
+        return reply, reply
+    pid = parts[2]
+    files = list(PHOTO_DIR.glob(f"{pid}.*"))
+    if not files:
+        reply = f"photo {pid} not found"
+        return reply, reply
+    reply = str(files[0].resolve())
+    return reply, reply
+
+
 CORE_COMMANDS: Dict[str, Tuple[Handler, str]] = {
     "/status": (handle_status, "show basic system metrics"),
     "/time": (handle_time, "show current UTC time"),
@@ -421,6 +436,7 @@ CORE_COMMANDS: Dict[str, Tuple[Handler, str]] = {
     "/search": (handle_search, "search command history"),
     "/ping": (handle_ping, "reply with pong"),
     "/color": (handle_color, "toggle colored output"),
+    "show": (handle_show, "show photo <id>"),
 }
 
 COMMAND_HANDLERS: Dict[str, Handler] = {

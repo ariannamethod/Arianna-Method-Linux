@@ -34,6 +34,7 @@
 <div id="controls">
   <span id="status" class="close">close</span>
   <button id="new-tab">new</button>
+  <button id="photo-btn">📷</button>
 </div>
 <div id="tab-bar"></div>
 <dialog id="token-dialog">
@@ -55,6 +56,13 @@ const container = document.getElementById('terminal-container');
 const sessions = {};
 let activeSid = null;
 let tabCount = 0;
+const photoBtn = document.getElementById('photo-btn');
+const photoInput = document.createElement('input');
+photoInput.type = 'file';
+photoInput.accept = 'image/*';
+photoInput.capture = 'environment';
+photoInput.className = 'hidden';
+document.body.appendChild(photoInput);
 function setStatus(state) {
   statusEl.textContent = state;
   statusEl.className = state;
@@ -171,6 +179,37 @@ document.getElementById('token-save').addEventListener('click', () => {
   if (!activeSid) {
     setActive(createSession());
   }
+});
+photoBtn.addEventListener('click', () => {
+  if (window.Telegram && window.Telegram.WebApp) {
+    if (window.Telegram.WebApp.requestCamera) {
+      window.Telegram.WebApp.requestCamera();
+    } else if (window.Telegram.WebApp.switchInlineQuery) {
+      window.Telegram.WebApp.switchInlineQuery('', true);
+    }
+  }
+  photoInput.click();
+});
+photoInput.addEventListener('change', async () => {
+  const file = photoInput.files[0];
+  if (!file) return;
+  const token = localStorage.getItem('amlkToken');
+  if (!token) {
+    tokenDialog.showModal();
+    return;
+  }
+  const data = new FormData();
+  data.append('photo', file);
+  const resp = await fetch('/photo', {
+    method: 'POST',
+    body: data,
+    headers: { Authorization: 'Basic ' + btoa('web:' + token) },
+  });
+  const result = await resp.json();
+  if (activeSid && sessions[activeSid]) {
+    sessions[activeSid].term.write(`\r\n${result.url}\r\n>> `);
+  }
+  photoInput.value = '';
 });
 if (localStorage.getItem('amlkToken')) {
   const last = localStorage.getItem('amlkActiveSid');
