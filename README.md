@@ -13,7 +13,7 @@ is invoked with software acceleration so the workflow succeeds on generic CPU-on
 
 The project ships a single entry script, `./build/build_ariannacore.sh`, which acquires kernel sources, prepares an `arianna_core_root` userland and emits a flat image. Run it from a fresh checkout to obtain a `bzImage` coupled with an `initramfs` that is aware of the assistant and the motd.
 
-Passing `--with-python` expands the userland with the CPython runtime and tooling. The `--clean` flag wipes previous artifacts, and `--test-qemu` executes a minimal boot in QEMU to validate that the emission succeeded.
+The base image only brings in a minimal toolset (`bash`, `curl` and `nano`). Passing `--with-python` expands the userland with the CPython runtime and tooling, while `--with-node` pulls in the heavier Node.js and npm toolchain for JavaScript workflows. The `--clean` flag wipes previous artifacts, and `--test-qemu` executes a minimal boot in QEMU to validate that the emission succeeded.
 
 ## Checksum verification
 

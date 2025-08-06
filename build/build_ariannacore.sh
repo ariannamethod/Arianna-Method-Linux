@@ -13,11 +13,13 @@ CURL="curl --retry 3 --retry-delay 5 -fL"
 LOG_DIR="/arianna_core/log"
 
 WITH_PY=0
+WITH_NODE=0
 CLEAN=0
 TEST_QEMU=0
 for arg in "$@"; do
   case "$arg" in
     --with-python) WITH_PY=1 ;;
+    --with-node) WITH_NODE=1 ;;
     --clean) CLEAN=1 ;;
     --test-qemu) TEST_QEMU=1 ;;
   esac
@@ -71,7 +73,13 @@ APK_BIN="$("$SCRIPT_DIR/build_apk_tools.sh")"
 install -Dm755 "$APK_BIN" acroot/usr/bin/apk
 
 # //: install runtime packages using the patched apk
-PKGS="bash curl nano nodejs npm"
+# bash: primary shell inside the initramfs
+# curl: fetch remote resources
+# nano: lightweight editor for emergency edits
+PKGS="bash curl nano"
+if [ "$WITH_NODE" -eq 1 ]; then
+  PKGS="$PKGS nodejs npm"  # //: heavy JS toolchain, opt-in via --with-node
+fi
 if [ "$WITH_PY" -eq 1 ]; then
   PKGS="$PKGS python3 py3-pip py3-virtualenv"
 fi
@@ -107,5 +115,5 @@ if [ "$TEST_QEMU" -eq 1 ]; then
 fi
 
 # //: verify language runtimes inside the VM (executed via expect or manual)
-# python3 --version  # //: confirm Python 3.10+
-# node --version     # //: confirm Node.js 18+
+# python3 --version  # //: confirm Python 3.10+ when --with-python is used
+# node --version     # //: confirm Node.js 18+ when --with-node is used
