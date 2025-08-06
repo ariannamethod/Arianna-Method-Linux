@@ -15,6 +15,7 @@ from collections import deque
 from typing import Deque, Iterable, List
 from dataclasses import dataclass
 import re
+import difflib
 
 _NO_COLOR_FLAG = "--no-color"
 USE_COLOR = (
@@ -303,8 +304,12 @@ def main() -> None:
             reply = search_history(pattern)
             colored = reply
         else:
-            reply = f"echo: {user}"
-            colored = reply
+            cmd = user.strip().split()[0]
+            suggestion = difflib.get_close_matches(cmd, COMMANDS, n=1)
+            reply = f"Unknown command: {user}. Type /help"
+            if suggestion:
+                reply += f". Did you mean {suggestion[0]}?"
+            colored = color(reply, SETTINGS.red)
         print(colored)
         log(f"letsgo:{reply}")
     log("session_end")
