@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import socket
-import subprocess
 import sys
 import readline
 import atexit
@@ -16,6 +15,11 @@ from collections import deque
 from typing import Callable, Deque, Iterable, List
 from dataclasses import dataclass
 import re
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - optional dependency
+    yaml = None
 
 _NO_COLOR_FLAG = "--no-color"
 USE_COLOR = (
@@ -29,16 +33,21 @@ if _NO_COLOR_FLAG in sys.argv:
 
 # Configuration
 CONFIG_PATH = Path.home() / ".letsgo" / "config"
+SCHEME_PATH = Path.home() / ".letsgo.yaml"
 
 
 @dataclass
 class Settings:
     prompt: str = ">> "
-    green: str = "\033[32m"
-    red: str = "\033[31m"
-    cyan: str = "\033[36m"
-    reset: str = "\033[0m"
     max_log_files: int = 100
+
+
+@dataclass
+class ColorScheme:
+    prompt: str = "\033[36m"
+    success: str = "\033[32m"
+    error: str = "\033[31m"
+    reset: str = "\033[0m"
 
 
 def _load_settings(path: Path = CONFIG_PATH) -> Settings:
@@ -68,8 +77,32 @@ def _load_settings(path: Path = CONFIG_PATH) -> Settings:
 SETTINGS = _load_settings()
 
 
-def color(text: str, code: str) -> str:
-    return f"{code}{text}{SETTINGS.reset}" if USE_COLOR else text
+def load_color_scheme(path: Path = SCHEME_PATH) -> ColorScheme:
+    scheme = ColorScheme()
+    data: dict[str, str] = {}
+    if yaml and path.exists():
+        try:
+            with path.open() as fh:
+                loaded = yaml.safe_load(fh) or {}
+                if isinstance(loaded, dict):
+                    data = {k: str(v) for k, v in loaded.items()}
+        except Exception:
+            data = {}
+    for key in ("prompt", "success", "error"):
+        env_key = f"LETSGO_COLOR_{key.upper()}"
+        value = os.getenv(env_key, data.get(key))
+        if value is not None:
+            value = bytes(str(value), "utf-8").decode("unicode_escape")
+            setattr(scheme, key, value)
+    return scheme
+
+
+COLOR_SCHEME = load_color_scheme()
+
+
+def color(text: str, key: str) -> str:
+    code = getattr(COLOR_SCHEME, key, key)
+    return f"{code}{text}{COLOR_SCHEME.reset}" if USE_COLOR and code else text
 
 
 # //: each session logs to its own file under a fixed directory
@@ -167,13 +200,15 @@ async def run_command(
             if remaining <= 0:
                 proc.kill()
                 await proc.communicate()
-                return color("command timed out", SETTINGS.red)
+                return color("command timed out", "error")
             try:
-                line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+                line = await asyncio.wait_for(
+                    proc.stdout.readline(), timeout=remaining
+                )
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.communicate()
-                return color("command timed out", SETTINGS.red)
+                return color("command timed out", "error")
             if not line:
                 break
             decoded = line.decode().rstrip()
@@ -183,10 +218,10 @@ async def run_command(
         rc = await proc.wait()
         output = "\n".join(output_lines).strip()
         if rc != 0:
-            return color(output, SETTINGS.red)
+            return color(output, "error")
         return output
     except Exception as exc:
-        return color(str(exc), SETTINGS.red)
+        return color(str(exc), "error")
 
 
 def clear_screen() -> str:
@@ -279,7 +314,7 @@ async def main() -> None:
     while True:
         try:
             user = await asyncio.to_thread(
-                input, color(SETTINGS.prompt, SETTINGS.cyan)
+                input, color(SETTINGS.prompt, "prompt")
             )
         except EOFError:
             break
@@ -288,12 +323,13 @@ async def main() -> None:
         log(f"user:{user}")
         if user.strip() == "/status":
             reply = status()
-            colored = color(reply, SETTINGS.green)
+            colored = color(reply, "success")
         elif user.strip() == "/time":
             reply = current_time()
             colored = reply
         elif user.startswith("/run "):
             lines: list[str] = []
+
             def _cb(line: str) -> None:
                 lines.append(line)
                 print(line)
@@ -319,7 +355,8 @@ async def main() -> None:
                 "Commands: /status, /time, /run <cmd>, "
                 "/summarize [term [limit]] [--history], "
                 "/clear, /history [N], /search <pattern>\n"
-                "Config: ~/.letsgo/config for prompt, colors, max_log_files"
+                "Config: ~/.letsgo/config for prompt, max_log_files; "
+                "colors via ~/.letsgo.yaml or environment"
             )
             colored = reply
         elif user.startswith("/summarize"):
