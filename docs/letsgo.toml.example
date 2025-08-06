@@ -1,0 +1,12 @@
+# Example LetsGo configuration
+prompt = ">> "
+theme = "dark"
+use_color = true
+max_log_files = 100
+
+[colors]
+green = "\033[32m"
+red = "\033[31m"
+cyan = "\033[36m"
+reset = "\033[0m"
+

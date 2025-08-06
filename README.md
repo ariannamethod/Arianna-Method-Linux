@@ -133,7 +133,7 @@ Other interfaces—serial TTYs, named pipes or custom RPC schemes—remain feasi
 
 ## letsgo.py
 
-The terminal is invoked after login and serves as the primary shell for Arianna Core. Each session creates a fresh log in `/arianna_core/log/`, stamped with UTC time, ensuring chronological reconstruction of interactions. A `max_log_files` option in `~/.letsgo/config` limits how many of these log files are kept on disk.
+The terminal is invoked after login and serves as the primary shell for Arianna Core. Each session creates a fresh log in `/arianna_core/log/`, stamped with UTC time, ensuring chronological reconstruction of interactions. Configuration is read from `~/.letsgo.toml` (or the path pointed to by `LETSGO_CONFIG`) and can adjust the prompt, theme, color usage, and a `max_log_files` option limiting how many logs are kept on disk. An example file lives at `docs/letsgo.toml.example`.
 
 Command history is persisted to `/arianna_core/log/history`. Existing entries load at startup and are written back on exit. Tab completion, powered by `readline`, suggests built-in verbs like `/status`, `/time`, `/run`, `/summarize`, `/search`, and `/help`.
 

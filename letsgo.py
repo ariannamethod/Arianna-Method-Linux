@@ -24,17 +24,15 @@ from typing import (
     List,
     Tuple,
 )
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # pragma: no cover - fallback for older Pythons
+    import tomli as tomllib
+
 _NO_COLOR_FLAG = "--no-color"
-USE_COLOR = (
-    os.getenv("LETSGO_NO_COLOR") is None
-    and os.getenv("NO_COLOR") is None
-    and _NO_COLOR_FLAG not in sys.argv
-)
-if _NO_COLOR_FLAG in sys.argv:
-    sys.argv.remove(_NO_COLOR_FLAG)
 
 
 APP_NAME = "LetsGo"
@@ -45,48 +43,94 @@ except importlib_metadata.PackageNotFoundError:
 
 
 # Configuration
-CONFIG_PATH = Path.home() / ".letsgo" / "config"
+CONFIG_PATH = Path(
+    os.getenv("LETSGO_CONFIG", str(Path.home() / ".letsgo.toml"))
+).expanduser()
+
+THEMES: Dict[str, Dict[str, str]] = {
+    "dark": {
+        "green": "\033[32m",
+        "red": "\033[31m",
+        "cyan": "\033[36m",
+        "reset": "\033[0m",
+    },
+    "light": {
+        "green": "\033[92m",
+        "red": "\033[91m",
+        "cyan": "\033[94m",
+        "reset": "\033[0m",
+    },
+}
 
 
 @dataclass
 class Settings:
     prompt: str = ">> "
-    green: str = "\033[32m"
-    red: str = "\033[31m"
-    cyan: str = "\033[36m"
-    reset: str = "\033[0m"
+    theme: str = "dark"
+    use_color: bool = True
     max_log_files: int = 100
+    colors: Dict[str, str] = field(default_factory=lambda: THEMES["dark"].copy())
 
 
 def _load_settings(path: Path = CONFIG_PATH) -> Settings:
     settings = Settings()
     try:
-        with path.open() as fh:
-            for line in fh:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = map(str.strip, line.split("=", 1))
-                value = value.strip("\"'")
-                value = bytes(value, "utf-8").decode("unicode_escape")
-                if hasattr(settings, key):
-                    attr = getattr(settings, key)
-                    if isinstance(attr, int):
-                        try:
-                            value = int(value)
-                        except ValueError:
-                            continue
-                    setattr(settings, key, value)
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
     except FileNotFoundError:
-        pass
+        return settings
+
+    if isinstance(data.get("prompt"), str):
+        settings.prompt = data["prompt"]
+
+    if isinstance(data.get("theme"), str) and data["theme"] in THEMES:
+        settings.theme = data["theme"]
+        settings.colors = THEMES[settings.theme].copy()
+
+    if isinstance(data.get("use_color"), bool):
+        settings.use_color = data["use_color"]
+
+    if isinstance(data.get("max_log_files"), int):
+        settings.max_log_files = data["max_log_files"]
+
+    colors = data.get("colors")
+    if isinstance(colors, dict):
+        for name, value in colors.items():
+            if isinstance(value, str):
+                settings.colors[name] = bytes(value, "utf-8").decode("unicode_escape")
+
     return settings
 
 
 SETTINGS = _load_settings()
 
 
-def color(text: str, code: str) -> str:
-    return f"{code}{text}{SETTINGS.reset}" if USE_COLOR else text
+def _determine_use_color(settings: Settings) -> bool:
+    disabled = (
+        os.getenv("LETSGO_NO_COLOR") is not None
+        or os.getenv("NO_COLOR") is not None
+        or not settings.use_color
+        or _NO_COLOR_FLAG in sys.argv
+    )
+    if _NO_COLOR_FLAG in sys.argv:
+        sys.argv.remove(_NO_COLOR_FLAG)
+    return not disabled
+
+
+USE_COLOR = _determine_use_color(SETTINGS)
+
+
+def color(text: str, name: str, theme: str | None = None) -> str:
+    theme_name = theme or SETTINGS.theme
+    codes = THEMES.get(theme_name, THEMES["dark"]).copy()
+    if theme_name == SETTINGS.theme:
+        codes.update(SETTINGS.colors)
+    if name.startswith("\033"):
+        code = name
+    else:
+        code = codes.get(name, "")
+    reset = codes.get("reset", "")
+    return f"{code}{text}{reset}" if USE_COLOR else text
 
 
 # //: each session logs to its own file under a fixed directory
@@ -185,13 +229,13 @@ async def run_command(
             if remaining <= 0:
                 proc.kill()
                 await proc.communicate()
-                return color("command timed out", SETTINGS.red)
+                return color("command timed out", "red")
             try:
                 line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.communicate()
-                return color("command timed out", SETTINGS.red)
+                return color("command timed out", "red")
             if not line:
                 break
             decoded = line.decode().rstrip()
@@ -201,10 +245,10 @@ async def run_command(
         rc = await proc.wait()
         output = "\n".join(output_lines).strip()
         if rc != 0:
-            return color(output, SETTINGS.red)
+            return color(output, "red")
         return output
     except Exception as exc:
-        return color(str(exc), SETTINGS.red)
+        return color(str(exc), "red")
 
 
 def clear_screen() -> str:
@@ -288,7 +332,7 @@ def search_history(pattern: str) -> str:
 
 async def handle_status(_: str) -> Tuple[str, str | None]:
     reply = status()
-    return reply, color(reply, SETTINGS.green)
+    return reply, color(reply, "green")
 
 
 async def handle_time(_: str) -> Tuple[str, str | None]:
@@ -418,12 +462,12 @@ async def main() -> None:
     log("session_start")
     version = f" v{APP_VERSION}" if APP_VERSION else ""
     header = f"{APP_NAME}{version}"
-    print(color(header, SETTINGS.green))
-    print(color("Commands:", SETTINGS.cyan), command_summary)
+    print(color(header, "green"))
+    print(color("Commands:", "cyan"), command_summary)
     print("Type 'exit' to quit.")
     while True:
         try:
-            user = await async_input(color(SETTINGS.prompt, SETTINGS.cyan))
+            user = await async_input(color(SETTINGS.prompt, "cyan"))
         except EOFError:
             break
         if user.strip().lower() in {"exit", "quit"}:
@@ -435,7 +479,7 @@ async def main() -> None:
             reply, colored = await handler(user)
         else:
             reply = f"Unknown command: {base}. Try /help for guidance."
-            colored = color(reply, SETTINGS.red)
+            colored = color(reply, "red")
         if colored is not None:
             print(colored)
         log(f"letsgo:{reply}")

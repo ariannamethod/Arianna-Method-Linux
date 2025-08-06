@@ -20,6 +20,27 @@ def _write_log(log_dir: Path, name: str, lines: list[str]):
     return path
 
 
+def test_load_settings_from_env(tmp_path, monkeypatch):
+    cfg = tmp_path / "cfg.toml"
+    cfg.write_text(
+        'prompt = "$ "\n'
+        "use_color = false\n"
+        'theme = "light"\n'
+        "[colors]\n"
+        'red = "\\u001b[91m"\n'
+    )
+    monkeypatch.setenv("LETSGO_CONFIG", str(cfg))
+    import importlib
+
+    importlib.reload(letsgo)
+    assert letsgo.SETTINGS.prompt == "$ "
+    assert letsgo.SETTINGS.theme == "light"
+    assert letsgo.SETTINGS.colors["red"] == "\u001b[91m"
+    assert letsgo.USE_COLOR is False
+    monkeypatch.delenv("LETSGO_CONFIG", raising=False)
+    importlib.reload(letsgo)
+
+
 def test_status_fields(monkeypatch):
     monkeypatch.setattr(letsgo, "_first_ip", lambda: "1.2.3.4")
     result = letsgo.status()
