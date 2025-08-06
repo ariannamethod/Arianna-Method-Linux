@@ -23,7 +23,13 @@ from typing import (
     Tuple,
 )
 from dataclasses import dataclass
+import json
 import re
+
+try:
+    import websockets
+except Exception:  # pragma: no cover - optional dependency
+    websockets = None
 
 _NO_COLOR_FLAG = "--no-color"
 USE_COLOR = (
@@ -128,6 +134,25 @@ def log(message: str) -> None:
 def log_error(message: str) -> None:
     with ERROR_LOG_PATH.open("a") as fh:
         fh.write(f"{datetime.utcnow().isoformat()} {message}\n")
+
+
+async def webapp_send(message: Dict[str, str]) -> bool:
+    """Send ``message`` to the WebApp via WebSocket.
+
+    The WebApp URL is read from the ``LETSGO_WEBAPP_WS`` environment variable.
+    Returns ``True`` if the message was sent, ``False`` otherwise.
+    """
+
+    url = os.getenv("LETSGO_WEBAPP_WS")
+    if not url or websockets is None:
+        return False
+    try:
+        async with websockets.connect(url) as ws:
+            await ws.send(json.dumps(message))
+        return True
+    except Exception as exc:  # pragma: no cover - network errors
+        log_error(f"webapp_send: {exc}")
+        return False
 
 
 def _first_ip() -> str:
@@ -392,6 +417,32 @@ async def handle_search(user: str) -> Tuple[str, str | None]:
     return reply, reply
 
 
+async def handle_sessions(user: str) -> Tuple[str, str | None]:
+    parts = user.split()
+    if len(parts) == 1:
+        sent = await webapp_send({"type": "sessions", "action": "list"})
+        reply = "requested session list" if sent else "webapp not configured"
+        return reply, reply
+    sid = parts[1]
+    sent = await webapp_send({"type": "sessions", "action": "switch", "sid": sid})
+    reply = f"switching to session {sid}" if sent else "webapp not configured"
+    return reply, reply
+
+
+async def handle_open(user: str) -> Tuple[str, str | None]:
+    path = user.partition(" ")[2].strip()
+    if not path:
+        reply = "Usage: /open <file>"
+        return reply, reply
+    file_path = Path(path)
+    if not file_path.exists():
+        reply = f"file not found: {path}"
+        return reply, color(reply, SETTINGS.red)
+    sent = await webapp_send({"type": "open", "file": str(file_path)})
+    reply = f"opening {file_path}" if sent else "webapp not configured"
+    return reply, reply
+
+
 async def handle_ping(_: str) -> Tuple[str, str | None]:
     reply = "pong"
     return reply, reply
@@ -419,6 +470,8 @@ CORE_COMMANDS: Dict[str, Tuple[Handler, str]] = {
     "/history": (handle_history, "show command history"),
     "/help": (handle_help, "show this help message"),
     "/search": (handle_search, "search command history"),
+    "/sessions": (handle_sessions, "list or switch terminal sessions"),
+    "/open": (handle_open, "view a file in the WebApp"),
     "/ping": (handle_ping, "reply with pong"),
     "/color": (handle_color, "toggle colored output"),
 }

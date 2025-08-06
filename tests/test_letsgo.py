@@ -184,3 +184,31 @@ def test_handle_py_timeout(monkeypatch):
         assert colored.startswith("\033[31m")
     else:
         assert colored is not None
+
+
+def test_handle_sessions_and_open(tmp_path, monkeypatch):
+    sent: dict[str, dict] = {}
+
+    async def fake_send(msg):
+        sent["msg"] = msg
+        return True
+
+    monkeypatch.setattr(letsgo, "webapp_send", fake_send)
+
+    output, _ = asyncio.run(letsgo.handle_sessions("/sessions"))
+    assert "session list" in output
+    assert sent["msg"] == {"type": "sessions", "action": "list"}
+
+    output, _ = asyncio.run(letsgo.handle_sessions("/sessions abc"))
+    assert "abc" in output
+    assert sent["msg"] == {"type": "sessions", "action": "switch", "sid": "abc"}
+
+    f = tmp_path / "file.txt"
+    f.write_text("data")
+    output, _ = asyncio.run(letsgo.handle_open(f"/open {f}"))
+    assert "opening" in output
+    assert sent["msg"] == {"type": "open", "file": str(f)}
+
+    output, colored = asyncio.run(letsgo.handle_open("/open missing"))
+    assert "file not found" in output
+    assert colored.startswith("\033[31m") if letsgo.USE_COLOR else colored is not None
