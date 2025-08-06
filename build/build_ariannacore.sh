@@ -84,8 +84,8 @@ fi
 # Strip docs to keep footprint small
 rm -rf acroot/usr/share/man acroot/usr/share/doc
 
-# //: include assistant, startup hook, motd and log dir
-install -Dm755 "$ROOT_DIR/assistant.py" acroot/usr/bin/assistant
+# //: include letsgo, startup hook, motd and log dir
+install -Dm755 "$ROOT_DIR/letsgo.py" acroot/usr/bin/letsgo.py
 install -Dm755 "$ROOT_DIR/cmd/startup.py" acroot/usr/bin/startup
 ln -sf /usr/bin/startup acroot/init
 mkdir -p "acroot${LOG_DIR}"

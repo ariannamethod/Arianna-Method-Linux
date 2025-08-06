@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tail assistant logs from the system log directory
+# Tail letsgo logs from the system log directory
 
 set -euo pipefail
 

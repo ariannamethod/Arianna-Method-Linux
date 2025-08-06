@@ -18,7 +18,7 @@ Node.js 18+ complements Python, providing asynchronous I/O modeled as a non-bloc
 
 Bash, curl, and nano compose the minimal interactive toolkit; each utility occupies a vertex in a dependency graph ensuring accessibility without bloat.
 
-The CLI assistant shipped in cmd/assistant.py demonstrates logging and echo capabilities, acting as a proof of concept for higher-order reasoning modules.
+The CLI assistant shipped in cmd/letsgo.py demonstrates logging and echo capabilities, acting as a proof of concept for higher-order reasoning modules.
 
 Logs are stored in /arianna_core/log and each entry is timestamped, forming a sequence ((t_i, m_i)) representing chronological states of dialogue.
 
@@ -110,19 +110,21 @@ When `--test-qemu` is supplied to the build script, the above sequence is execut
 
 ## Future Interfaces
 
-A Telegram bridge is planned through a small bot that proxies chat messages to `assistant.py`. The bot will authenticate via API token and map each chat to a session log, enabling asynchronous reasoning threads.
+A Telegram bridge is planned through a small bot that proxies chat messages to `letsgo.py`. The bot will authenticate via API token and map each chat to a session log, enabling asynchronous reasoning threads.
 
 A web UI may follow, exposing the same assistant over WebSockets. The intent is to treat HTTP as a transport layer while preserving the conversational core. SSL termination and rate limiting will rely on existing libraries and can run in user space atop the initramfs.
 
 Other interfaces—serial TTYs, named pipes or custom RPC schemes—remain feasible because the assistant operates in standard I/O space, reducing coupling to any specific frontend.
 
-## assistant.py
+## letsgo.py
 
-The assistant is invoked after login and serves as the primary shell for Arianna Core. Each session creates a fresh log in `/arianna_core/log/`, stamped with UTC time, ensuring chronological reconstruction of interactions.
+The letsgo assistant is invoked after login and serves as the primary shell for Arianna Core. Each session creates a fresh log in `/arianna_core/log/`, stamped with UTC time, ensuring chronological reconstruction of interactions.
 
 A `/status` command reports CPU core count, raw uptime seconds read from `/proc/uptime`, and the current host IP. This offers an at-a-glance check that the minimal environment is healthy.
 
 The `/summarize` command performs a naive search across all session logs and prints the last five matches, demonstrating how higher-order reasoning can be layered atop simple text filters.
+
+Two additional utilities expand the terminal: `/time` prints the current UTC timestamp, and `/calc <expr>` evaluates basic arithmetic expressions using a safe parser.
 
 By default any unrecognised input is echoed back, but the structure is prepared for more advanced NLP pipelines. Hooks can intercept the text and dispatch it to remote models, feeding results back through the same interface.
 

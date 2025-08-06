@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from collections import deque
 from typing import Deque, Iterable
+import ast
+import operator as op
 
 # //: each session logs to its own file under a fixed directory
 LOG_DIR = Path("/arianna_core/log")
@@ -75,10 +77,45 @@ def summarize(term: str | None = None, limit: int = 5) -> str:
     return "\n".join(matches) if matches else "no matches"
 
 
+def time_now() -> str:
+    """Return the current UTC time in ISO-8601 format."""
+    return datetime.utcnow().isoformat()
+
+
+_OPS = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Mod: op.mod,
+    ast.Pow: op.pow,
+    ast.USub: op.neg,
+}
+
+
+def _eval(node: ast.AST) -> float:
+    if isinstance(node, ast.Num):
+        return node.n
+    if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
+        return _OPS[type(node.op)](_eval(node.left), _eval(node.right))
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _OPS:
+        return _OPS[type(node.op)](_eval(node.operand))
+    raise ValueError("unsupported expression")
+
+
+def calc(expr: str) -> str:
+    """Evaluate a basic arithmetic expression safely."""
+    try:
+        node = ast.parse(expr, mode="eval").body
+        return str(_eval(node))
+    except Exception as exc:  # pragma: no cover - error path
+        return f"error: {exc}"
+
+
 def main() -> None:
     _ensure_log_dir()
     log("session_start")
-    print("Arianna assistant ready. Type 'exit' to quit.")
+    print("Arianna letsgo ready. Type 'exit' to quit.")
     while True:
         try:
             user = input(">> ")
@@ -89,6 +126,11 @@ def main() -> None:
         log(f"user:{user}")
         if user.strip() == "/status":
             reply = status()
+        elif user.strip() == "/time":
+            reply = time_now()
+        elif user.startswith("/calc"):
+            expr = user.partition(" ")[2]
+            reply = calc(expr)
         elif user.startswith("/summarize"):
             parts = user.split()[1:]
             limit = 5
