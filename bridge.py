@@ -12,6 +12,8 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import HTMLResponse
+from pathlib import Path
 from telegram import (
     Update,
     BotCommand,
@@ -32,14 +34,15 @@ import uvicorn
 
 PROMPT = ">>"
 
-MAIN_COMMANDS = ["/status", "/time", "/help"]
+WEBAPP_URL = os.getenv("WEBAPP_URL", "http://localhost:8000/webapp")
 INLINE_KEYBOARD = InlineKeyboardMarkup(
     [
         [
             InlineKeyboardButton("status", callback_data="/status"),
             InlineKeyboardButton("time", callback_data="/time"),
             InlineKeyboardButton("help", callback_data="/help"),
-        ]
+        ],
+        [InlineKeyboardButton("Open WebApp", web_app={"url": WEBAPP_URL})],
     ]
 )
 
@@ -119,6 +122,12 @@ RATE_LIMIT = float(os.getenv("RATE_LIMIT_SEC", "1"))
 _last_call: Dict[str, float] = {}
 
 
+@app.get("/webapp", response_class=HTMLResponse)
+async def webapp_page() -> HTMLResponse:
+    html_path = Path(__file__).with_name("arianna_terminal.html")
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
 def _check_rate(client: str) -> None:
     now = time.time()
     if now - _last_call.get(client, 0) < RATE_LIMIT:
@@ -171,10 +180,7 @@ async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception as exc:  # noqa: BLE001 - send error to user
         await update.message.reply_text(f"Error: {exc}")
         return
-    if cmd in MAIN_COMMANDS:
-        await update.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
-    else:
-        await update.message.reply_text(output)
+    await update.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -190,7 +196,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def run_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Send the command to run.")
+    await update.message.reply_text(
+        "Send the command to run.", reply_markup=INLINE_KEYBOARD
+    )
     return RUN_COMMAND
 
 
@@ -201,14 +209,14 @@ async def run_execute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
     try:
         output = await letsgo.run(cmd)
-        await update.message.reply_text(output)
+        await update.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
     except Exception as exc:  # noqa: BLE001 - send error to user
         await update.message.reply_text(f"Error: {exc}")
     return ConversationHandler.END
 
 
 async def run_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Cancelled.")
+    await update.message.reply_text("Cancelled.", reply_markup=INLINE_KEYBOARD)
     return ConversationHandler.END
 
 
