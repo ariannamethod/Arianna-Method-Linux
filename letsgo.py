@@ -17,6 +17,17 @@ from typing import Callable, Deque, Iterable, List
 from dataclasses import dataclass
 import re
 
+try:  # optional dependency
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.lexers import PygmentsLexer
+    from prompt_toolkit.styles import Style
+    from pygments.lexers import BashLexer
+    PT_AVAILABLE = True
+except ModuleNotFoundError:  # pragma: no cover - tested via reload without pkg
+    PT_AVAILABLE = False
+
 _NO_COLOR_FLAG = "--no-color"
 USE_COLOR = (
     os.getenv("LETSGO_NO_COLOR") is None
@@ -259,8 +270,41 @@ def search_history(pattern: str) -> str:
     return "\n".join(matches) if matches else "no matches"
 
 
-async def main() -> None:
-    _ensure_log_dir()
+def _build_prompt() -> Callable[[], str]:
+    if PT_AVAILABLE:
+        class _PTCompleter(Completer):
+            def get_completions(self, document, complete_event):  # type: ignore[override]
+                text = document.text_before_cursor
+                if text.startswith("/run "):
+                    path = Path(text[5:])
+                    directory = path.parent if path.parent != Path(".") else Path(".")
+                    try:
+                        entries = os.listdir(directory)
+                    except OSError:
+                        matches: list[str] = []
+                    else:
+                        matches = [
+                            str(directory / entry) if directory != Path(".") else entry
+                            for entry in entries
+                            if entry.startswith(path.name)
+                        ]
+                else:
+                    matches = [cmd for cmd in COMMANDS if cmd.startswith(text)]
+                for m in matches:
+                    yield Completion(m, start_position=-len(text))
+
+        session = PromptSession(
+            completer=_PTCompleter(),
+            history=FileHistory(str(HISTORY_PATH)),
+            lexer=PygmentsLexer(BashLexer),
+            style=Style.from_dict({"prompt": "ansicyan"}),
+        )
+
+        def _prompt() -> str:
+            return session.prompt(color(SETTINGS.prompt, SETTINGS.cyan))
+
+        return _prompt
+
     try:
         readline.read_history_file(str(HISTORY_PATH))
     except FileNotFoundError:
@@ -289,13 +333,21 @@ async def main() -> None:
     readline.set_completer(completer)
     atexit.register(readline.write_history_file, str(HISTORY_PATH))
 
+    def _prompt() -> str:
+        return input(color(SETTINGS.prompt, SETTINGS.cyan))
+
+    return _prompt
+
+
+async def main() -> None:
+    _ensure_log_dir()
+    get_input = _build_prompt()
+
     log("session_start")
     print("LetsGo terminal ready. Type 'exit' to quit.")
     while True:
         try:
-            user = await asyncio.to_thread(
-                input, color(SETTINGS.prompt, SETTINGS.cyan)
-            )
+            user = await asyncio.to_thread(get_input)
         except EOFError:
             break
         if user.strip().lower() in {"exit", "quit"}:

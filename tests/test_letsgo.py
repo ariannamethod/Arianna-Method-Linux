@@ -3,6 +3,7 @@ import re
 import sys
 from pathlib import Path
 import asyncio
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -93,3 +94,39 @@ def test_search_history(tmp_path, monkeypatch):
     monkeypatch.setattr(letsgo, "HISTORY_PATH", hist)
     result = letsgo.search_history("foo")
     assert result.splitlines() == ["foo", "foobar"]
+
+
+def test_build_prompt_uses_prompt_toolkit(monkeypatch, tmp_path):
+    if not getattr(letsgo, "PT_AVAILABLE", False):
+        pytest.skip("prompt_toolkit not available")
+    monkeypatch.setattr(letsgo, "HISTORY_PATH", tmp_path / "history")
+
+    class DummySession:
+        def __init__(self, **kwargs):
+            pass
+
+        def prompt(self, msg):
+            return "done"
+
+    monkeypatch.setattr(letsgo, "PromptSession", lambda **kw: DummySession())
+    monkeypatch.setattr(letsgo, "FileHistory", lambda path: object())
+    func = letsgo._build_prompt()
+    assert func() == "done"
+
+
+def test_build_prompt_fallback(monkeypatch):
+    monkeypatch.setattr(letsgo, "PT_AVAILABLE", False)
+    monkeypatch.setattr(letsgo.readline, "read_history_file", lambda *a, **k: None)
+    monkeypatch.setattr(letsgo.readline, "parse_and_bind", lambda *a, **k: None)
+    monkeypatch.setattr(letsgo.readline, "set_completer", lambda *a, **k: None)
+    monkeypatch.setattr(letsgo.readline, "write_history_file", lambda *a, **k: None)
+    called = {}
+
+    def fake_input(prompt):
+        called["prompt"] = prompt
+        return "x"
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    func = letsgo._build_prompt()
+    assert func() == "x"
+    assert "prompt" in called
