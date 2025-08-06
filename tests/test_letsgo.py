@@ -1,6 +1,7 @@
 import os
 import re
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -53,3 +54,15 @@ def test_current_time_format():
 def test_run_command():
     output = letsgo.run_command("echo hello")
     assert output.strip() == "hello"
+
+
+def test_run_background_output():
+    pid = letsgo.run_background("echo background")
+    assert pid in letsgo.TASKS
+    lines = []
+    for _ in range(20):
+        lines.extend(letsgo.poll_tasks())
+        if not letsgo.TASKS:
+            break
+        time.sleep(0.05)
+    assert any(line == "background" for _pid, line in lines)

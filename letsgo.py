@@ -9,10 +9,12 @@ import subprocess
 import sys
 import readline
 import atexit
+import threading
+from queue import Empty, Queue
 from datetime import datetime
 from pathlib import Path
 from collections import deque
-from typing import Deque, Iterable, List
+from typing import Deque, Dict, Iterable, List, Tuple, TextIO
 
 # ANSI color codes
 GREEN = "\033[32m"
@@ -43,9 +45,34 @@ COMMANDS: List[str] = [
     "/status",
     "/time",
     "/run",
+    "/runbg",
+    "/jobs",
+    "/kill",
     "/summarize",
     "/help",
 ]
+
+TASKS: Dict[int, "Task"] = {}
+
+
+class Task:
+    """Background task information."""
+
+    def __init__(self, cmd: str, proc: subprocess.Popen[str]):
+        self.cmd = cmd
+        self.proc = proc
+        self.queue: Queue[str] = Queue()
+        self.thread = threading.Thread(
+            target=self._reader, args=(proc.stdout,), daemon=True
+        )
+        self.thread.start()
+
+    def _reader(self, pipe: TextIO | None) -> None:
+        if pipe is None:
+            return
+        for line in pipe:
+            self.queue.put(line.rstrip())
+        pipe.close()
 
 
 def _ensure_log_dir() -> None:
@@ -94,20 +121,77 @@ def current_time() -> str:
 
 def run_command(command: str) -> str:
     """Execute a shell command and return its output."""
+    proc = subprocess.Popen(
+        command,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    lines: list[str] = []
+
+    def reader() -> None:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            lines.append(line.rstrip())
+
+    thread = threading.Thread(target=reader)
+    thread.start()
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=10,
-        )
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as exc:
-        output = exc.stdout.strip() if exc.stdout else str(exc)
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    thread.join()
+    output = "\n".join(lines)
+    if proc.returncode and proc.returncode != 0:
         return color(output, RED)
+    return output
+
+
+def run_background(command: str) -> int:
+    """Start ``command`` in the background and return its PID."""
+    proc = subprocess.Popen(
+        command,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    TASKS[proc.pid] = Task(command, proc)
+    return proc.pid
+
+
+def poll_tasks() -> List[Tuple[int, str]]:
+    """Return lines produced by background tasks without blocking."""
+    results: List[Tuple[int, str]] = []
+    for pid, task in list(TASKS.items()):
+        while True:
+            try:
+                line = task.queue.get_nowait()
+            except Empty:
+                break
+            results.append((pid, line))
+        if (
+            task.proc.poll() is not None
+            and task.queue.empty()
+            and not task.thread.is_alive()
+        ):
+            del TASKS[pid]
+    return results
+
+
+def list_jobs() -> str:
+    if not TASKS:
+        return "no jobs"
+    return "\n".join(f"{pid} {task.cmd}" for pid, task in TASKS.items())
+
+
+def kill_task(pid: int) -> str:
+    task = TASKS.get(pid)
+    if not task:
+        return f"no such pid {pid}"
+    task.proc.terminate()
+    return f"killed {pid}"
 
 
 def _iter_log_lines() -> Iterable[str]:
@@ -147,6 +231,8 @@ def main() -> None:
     log("session_start")
     print("LetsGo terminal ready. Type 'exit' to quit.")
     while True:
+        for pid, line in poll_tasks():
+            print(f"[{pid}] {line}")
         try:
             user = input(color(">> ", CYAN))
         except EOFError:
@@ -163,10 +249,21 @@ def main() -> None:
         elif user.startswith("/run "):
             reply = run_command(user.partition(" ")[2])
             colored = reply
+        elif user.startswith("/runbg "):
+            pid = run_background(user.partition(" ")[2])
+            reply = str(pid)
+            colored = reply
+        elif user.strip() == "/jobs":
+            reply = list_jobs()
+            colored = reply
+        elif user.startswith("/kill "):
+            pid_str = user.partition(" ")[2]
+            reply = kill_task(int(pid_str)) if pid_str.isdigit() else "invalid pid"
+            colored = reply
         elif user.strip() == "/help":
             reply = (
-                "Commands: /status, /time, /run <cmd>, "
-                "/summarize [term [limit]]"
+                "Commands: /status, /time, /run <cmd>, /runbg <cmd>, "
+                "/jobs, /kill <pid>, /summarize [term [limit]]"
             )
             colored = reply
         elif user.startswith("/summarize"):
@@ -183,6 +280,8 @@ def main() -> None:
             colored = reply
         print(colored)
         log(f"letsgo:{reply}")
+        for pid, line in poll_tasks():
+            print(f"[{pid}] {line}")
     log("session_end")
 
 
