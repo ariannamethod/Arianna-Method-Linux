@@ -15,16 +15,60 @@ LOG_DIR="/arianna_core/log"
 WITH_PY=0
 CLEAN=0
 TEST_QEMU=0
-for arg in "$@"; do
-  case "$arg" in
-    --with-python) WITH_PY=1 ;;
-    --clean) CLEAN=1 ;;
-    --test-qemu) TEST_QEMU=1 ;;
+# optional file listing extra packages, one per line
+PKG_FILE=""
+# when set, prints resolved package list and exits
+DRY_RUN=0
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --with-python)
+      WITH_PY=1
+      shift
+      ;;
+    --clean)
+      CLEAN=1
+      shift
+      ;;
+    --test-qemu)
+      TEST_QEMU=1
+      shift
+      ;;
+    --packages-file)
+      PKG_FILE="$2"
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    *)
+      shift
+      ;;
   esac
 done
 
 if [ "$CLEAN" -eq 1 ]; then
   rm -rf "$SCRIPT_DIR/kernel" "$SCRIPT_DIR/acroot" "$SCRIPT_DIR/arianna.initramfs.gz" "$SCRIPT_DIR/arianna-core.img"
+fi
+
+# minimal runtime packages; can be extended via --packages-file
+PKGS="bash curl nano nodejs npm"
+if [ "$WITH_PY" -eq 1 ]; then
+  PKGS="$PKGS python3 py3-pip py3-virtualenv"
+fi
+if [ -n "$PKG_FILE" ]; then
+  if [ -f "$PKG_FILE" ]; then
+    EXTRA_PKGS="$(grep -Ev '^\s*(#|$)' "$PKG_FILE" | tr '\n' ' ')"
+    PKGS="$PKGS $EXTRA_PKGS"
+  else
+    echo "Package file $PKG_FILE not found" >&2
+    exit 1
+  fi
+fi
+if [ "$DRY_RUN" -eq 1 ]; then
+  echo "$PKGS"
+  exit 0
 fi
 
 # //: fetch kernel sources
@@ -71,10 +115,6 @@ APK_BIN="$("$SCRIPT_DIR/build_apk_tools.sh")"
 install -Dm755 "$APK_BIN" acroot/usr/bin/apk
 
 # //: install runtime packages using the patched apk
-PKGS="bash curl nano nodejs npm"
-if [ "$WITH_PY" -eq 1 ]; then
-  PKGS="$PKGS python3 py3-pip py3-virtualenv"
-fi
 # shellcheck disable=SC2086
 "$APK_BIN" --root acroot --repositories-file /etc/apk/repositories add --no-cache $PKGS
 

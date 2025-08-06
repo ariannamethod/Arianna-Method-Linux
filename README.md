@@ -15,6 +15,8 @@ The project ships a single entry script, `./build/build_ariannacore.sh`, which a
 
 Passing `--with-python` expands the userland with the CPython runtime and tooling. The `--clean` flag wipes previous artifacts, and `--test-qemu` executes a minimal boot in QEMU to validate that the emission succeeded.
 
+By default the image installs a minimal runtime: `bash`, `curl`, `nano`, `nodejs` and `npm`. Additional packages can be listed in a text file and supplied via `--packages-file <path>`. Each line in the file should contain a package name; lines starting with `#` are ignored.
+
 ## Checksum verification
 
 For reproducibility the build script verifies downloads against known SHA256 sums using:
