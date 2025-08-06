@@ -5,3 +5,4 @@ arianna_core/alpine-minirootfs-*
 arianna_core/rootfs/
 arianna_core/arianna.initramfs.gz
 arianna_core/arianna-core.img
+build/AM-alpine-security-database/

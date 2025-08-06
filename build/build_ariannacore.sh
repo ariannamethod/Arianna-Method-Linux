@@ -8,6 +8,7 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 KERNEL_VERSION="${KERNEL_VERSION:-6.6.4}"
 ACROOT_VERSION="${ACROOT_VERSION:-3.19.0}"
 CURL="curl --retry 3 --retry-delay 5 -fL"
+SECDB_REPO="${SECDB_REPO:-https://github.com/alpinelinux/alpine-secdb.git}"
 
 WITH_PY=0
 CLEAN=0
@@ -68,13 +69,21 @@ if [ ! -f acroot/.unpacked ]; then
   touch acroot/.unpacked
 fi
 
+# //: fetch and stage security database
+SECDB_DIR="$SCRIPT_DIR/AM-alpine-security-database"
+if [ ! -d "$SECDB_DIR" ]; then
+  git clone "$SECDB_REPO" "$SECDB_DIR"
+fi
+mkdir -p acroot/etc/apk
+cp -r "$SECDB_DIR"/. acroot/etc/apk/
+
 # //: install runtime packages
 PKGS="bash curl nano nodejs npm"
 if [ "$WITH_PY" -eq 1 ]; then
   PKGS="$PKGS python3 py3-pip py3-virtualenv"
 fi
 # shellcheck disable=SC2086
-apk --root acroot --repositories-file /etc/apk/repositories add --no-cache $PKGS
+apk --root acroot --repositories-file /etc/apk/repositories --security-db /etc/apk --vuln add --no-cache $PKGS
 
 # //: include assistant, startup hook, motd and log dir
 install -Dm755 "$ROOT_DIR/assistant.py" acroot/usr/bin/assistant
