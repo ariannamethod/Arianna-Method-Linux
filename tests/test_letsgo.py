@@ -3,6 +3,7 @@ import re
 import sys
 from pathlib import Path
 import asyncio
+import subprocess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -90,6 +91,22 @@ def test_run_command_mock(monkeypatch):
     output = asyncio.run(letsgo.run_command("whatever", _cb))
     assert output == "done"
     assert lines == ["...running", "done"]
+
+
+def test_run_command_timeout(monkeypatch):
+    monkeypatch.setattr(letsgo, "USE_COLOR", False)
+    output = asyncio.run(letsgo.run_command("sleep 5", timeout=0.1))
+    assert output == "command timed out"
+
+
+def test_run_command_subprocess_timeout(monkeypatch):
+    def _raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="whatever", timeout=1)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", _raise_timeout)
+    monkeypatch.setattr(letsgo, "USE_COLOR", False)
+    output = asyncio.run(letsgo.run_command("whatever"))
+    assert output == "command timed out"
 
 
 def test_clear_screen_returns_sequence():

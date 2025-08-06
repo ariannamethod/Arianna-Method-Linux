@@ -26,6 +26,7 @@ from typing import (
 )
 from dataclasses import dataclass
 import re
+import subprocess
 
 _NO_COLOR_FLAG = "--no-color"
 USE_COLOR = (
@@ -83,6 +84,8 @@ def _load_settings(path: Path = CONFIG_PATH) -> Settings:
 
 
 SETTINGS = _load_settings()
+
+COMMAND_TIMEOUT = 10
 
 
 def color(text: str, code: str) -> str:
@@ -161,13 +164,15 @@ async def async_input(prompt: str) -> str:
 
 
 async def run_command(
-    command: str, on_line: Callable[[str], None] | None = None
+    command: str,
+    on_line: Callable[[str], None] | None = None,
+    timeout: float = COMMAND_TIMEOUT,
 ) -> str:
     """Execute ``command`` and return its output.
 
     If ``on_line`` is provided, it is called with each line of output as it
-    becomes available. A 10‑second timeout is enforced and any error output is
-    colored red.
+    becomes available. A timeout is enforced and any error output is colored
+    red. The default timeout is ``COMMAND_TIMEOUT`` seconds.
     """
     try:
         if on_line:
@@ -181,13 +186,16 @@ async def run_command(
         loop = asyncio.get_running_loop()
         start = loop.time()
         while True:
-            remaining = 10 - (loop.time() - start)
+            remaining = timeout - (loop.time() - start)
             if remaining <= 0:
                 proc.kill()
                 await proc.communicate()
                 return color("command timed out", SETTINGS.red)
             try:
-                line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+                line = await asyncio.wait_for(
+                    proc.stdout.readline(),
+                    timeout=remaining,
+                )
             except asyncio.TimeoutError:
                 proc.kill()
                 await proc.communicate()
@@ -203,6 +211,8 @@ async def run_command(
         if rc != 0:
             return color(output, SETTINGS.red)
         return output
+    except subprocess.TimeoutExpired:
+        return color("command timed out", SETTINGS.red)
     except Exception as exc:
         return color(str(exc), SETTINGS.red)
 
@@ -326,7 +336,8 @@ async def handle_history(user: str) -> Tuple[str, str | None]:
 
 
 async def handle_help(_: str) -> Tuple[str, str | None]:
-    lines = [f"{cmd} - {desc}" for cmd, (_, desc) in sorted(COMMAND_MAP.items())]
+    items = sorted(COMMAND_MAP.items())
+    lines = [f"{cmd} - {desc}" for cmd, (_, desc) in items]
     reply = "\n".join(lines)
     return reply, reply
 
