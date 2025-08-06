@@ -9,8 +9,6 @@ import sys
 import readline
 import atexit
 import asyncio
-import importlib
-import pkgutil
 import importlib.metadata as importlib_metadata
 from datetime import datetime
 from pathlib import Path
@@ -366,6 +364,11 @@ async def handle_color(user: str) -> Tuple[str, str | None]:
     return reply, color(reply, SETTINGS.green)
 
 
+async def handle_ping(_: str) -> Tuple[str, str | None]:
+    reply = "pong"
+    return reply, reply
+
+
 CORE_COMMANDS: Dict[str, Tuple[Handler, str]] = {
     "/status": (handle_status, "show basic system metrics"),
     "/time": (handle_time, "show current UTC time"),
@@ -376,6 +379,7 @@ CORE_COMMANDS: Dict[str, Tuple[Handler, str]] = {
     "/help": (handle_help, "show this help message"),
     "/search": (handle_search, "search command history"),
     "/color": (handle_color, "toggle colored output"),
+    "/ping": (handle_ping, "respond with pong"),
 }
 
 COMMAND_HANDLERS: Dict[str, Handler] = {
@@ -391,16 +395,6 @@ def register_core(commands: List[str], handlers: Dict[str, Handler]) -> None:
     COMMAND_MAP.update(CORE_COMMANDS)
 
 
-def _load_plugins(commands: List[str], handlers: Dict[str, Handler]) -> None:
-    plugin_dir = Path(__file__).with_name("plugins")
-    if not plugin_dir.exists():
-        return
-    for module_info in pkgutil.iter_modules([str(plugin_dir)]):
-        module = importlib.import_module(f"plugins.{module_info.name}")
-        if hasattr(module, "register"):
-            module.register(commands, handlers)
-
-
 async def main() -> None:
     _ensure_log_dir()
     try:
@@ -408,7 +402,6 @@ async def main() -> None:
     except FileNotFoundError:
         pass
 
-    _load_plugins(COMMANDS, COMMAND_HANDLERS)
     command_summary = " ".join(sorted(COMMAND_HANDLERS))
 
     readline.parse_and_bind("tab: complete")
