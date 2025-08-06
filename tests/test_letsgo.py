@@ -75,10 +75,22 @@ def test_run_command_mock(monkeypatch):
 
     lines: list[str] = []
 
-    def _cb(line: str) -> None:
-        lines.append(line)
+    async def _collect() -> str:
+        queue: asyncio.Queue[str] = asyncio.Queue()
 
-    output = asyncio.run(letsgo.run_command("whatever", _cb))
+        async def _reader() -> None:
+            while True:
+                line = await queue.get()
+                if line is None:
+                    break
+                lines.append(line)
+
+        reader_task = asyncio.create_task(_reader())
+        result = await letsgo.run_command("whatever", queue)
+        await reader_task
+        return result
+
+    output = asyncio.run(_collect())
     assert output == "done"
     assert lines == ["...running", "done"]
 
@@ -175,7 +187,9 @@ def test_handle_py_returns_errors():
 
 def test_handle_py_timeout(monkeypatch):
     monkeypatch.setattr(letsgo, "PY_TIMEOUT", 0.1)
-    output, colored = asyncio.run(letsgo.handle_py("/py import time; time.sleep(1)"))
+    output, colored = asyncio.run(
+        letsgo.handle_py("/py import time; time.sleep(1)"),
+    )
     assert "timed out" in output
     if letsgo.USE_COLOR:
         assert colored.startswith("\033[31m")

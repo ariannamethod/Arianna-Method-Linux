@@ -159,18 +159,19 @@ async def async_input(prompt: str) -> str:
 
 async def run_command(
     command: str,
-    on_line: Callable[[str], None] | None = None,
+    on_line: asyncio.Queue[str] | None = None,
     timeout: int = 10,
 ) -> str:
     """Execute ``command`` and return its output.
 
-    If ``on_line`` is provided, it is called with each line of output as it
-    becomes available. A timeout is enforced and any error output is colored
-    red.
+    If ``on_line`` is provided, lines from the subprocess are put into the
+    queue as they become available. A timeout is enforced and any error output
+    is colored red. A ``None`` value is placed on the queue to signal that the
+    command has finished.
     """
     try:
-        if on_line:
-            on_line("...running")
+        if on_line is not None:
+            await on_line.put("...running")
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
@@ -198,14 +199,18 @@ async def run_command(
                 break
             decoded = line.decode().rstrip()
             output_lines.append(decoded)
-            if on_line:
-                on_line(decoded)
+            if on_line is not None:
+                await on_line.put(decoded)
         rc = await proc.wait()
         output = "\n".join(output_lines).strip()
+        if on_line is not None:
+            await on_line.put(None)
         if rc != 0:
             return color(output, SETTINGS.red)
         return output
     except Exception as exc:
+        if on_line is not None:
+            await on_line.put(None)
         return color(str(exc), SETTINGS.red)
 
 
@@ -301,12 +306,19 @@ async def handle_time(_: str) -> Tuple[str, str | None]:
 async def handle_run(user: str) -> Tuple[str, str | None]:
     command = user.partition(" ")[2]
     lines: list[str] = []
+    queue: asyncio.Queue[str] = asyncio.Queue()
 
-    def _cb(line: str) -> None:
-        lines.append(line)
-        print(line)
+    async def _printer() -> None:
+        while True:
+            line = await queue.get()
+            if line is None:
+                break
+            lines.append(line)
+            print(line)
 
-    reply = await run_command(command, _cb, SETTINGS.command_timeout)
+    printer_task = asyncio.create_task(_printer())
+    reply = await run_command(command, queue, SETTINGS.command_timeout)
+    await printer_task
     combined = "\n".join(lines).strip()
     colored = reply if reply != combined else None
     reply = reply if colored else combined
@@ -327,7 +339,10 @@ async def handle_py(user: str) -> Tuple[str, str | None]:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=PY_TIMEOUT)
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=PY_TIMEOUT,
+        )
     except asyncio.TimeoutError:
         proc.kill()
         await proc.communicate()
