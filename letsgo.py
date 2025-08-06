@@ -12,7 +12,7 @@ import atexit
 from datetime import datetime
 from pathlib import Path
 from collections import deque
-from typing import Deque, Iterable, List
+from typing import Callable, Deque, Iterable, List
 from dataclasses import dataclass
 
 _NO_COLOR_FLAG = "--no-color"
@@ -68,16 +68,6 @@ LOG_DIR = Path("/arianna_core/log")
 SESSION_ID = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
 LOG_PATH = LOG_DIR / f"{SESSION_ID}.log"
 HISTORY_PATH = LOG_DIR / "history"
-
-COMMANDS: List[str] = [
-    "/status",
-    "/time",
-    "/run",
-    "/summarize",
-    "/clear",
-    "/history",
-    "/help",
-]
 
 
 def _ensure_log_dir() -> None:
@@ -174,7 +164,56 @@ def summarize(term: str | None = None, limit: int = 5) -> str:
     return "\n".join(matches) if matches else "no matches"
 
 
+ARGS: List[str] = []
+
+
+def _handle_run() -> str:
+    return run_command(" ".join(ARGS))
+
+
+def _handle_summarize() -> str:
+    parts = ARGS[:]
+    limit = 5
+    if parts and parts[-1].isdigit():
+        limit = int(parts[-1])
+        parts = parts[:-1]
+    term = " ".join(parts) if parts else None
+    return summarize(term, limit)
+
+
+def _handle_help() -> str:
+    return (
+        "Commands: /status, /time, /run <cmd>, /summarize [term [limit]], "
+        "/clear, /history [N]\n"
+        "Config: ~/.letsgo/config for prompt and colors"
+    )
+
+
+def _handle_history() -> str:
+    limit = int(ARGS[0]) if ARGS and ARGS[0].isdigit() else 20
+    return history(limit)
+
+
+def unknown_command(user: str) -> str:
+    return f"echo: {user}"
+
+
+COMMAND_HANDLERS: dict[str, Callable[[], str]] = {
+    "/status": status,
+    "/time": current_time,
+    "/run": _handle_run,
+    "/summarize": _handle_summarize,
+    "/help": _handle_help,
+    "/clear": clear_screen,
+    "/history": _handle_history,
+}
+
+
+COMMANDS: List[str] = list(COMMAND_HANDLERS)
+
+
 def main() -> None:
+    global ARGS
     _ensure_log_dir()
     try:
         readline.read_history_file(str(HISTORY_PATH))
@@ -199,41 +238,20 @@ def main() -> None:
         if user.strip().lower() in {"exit", "quit"}:
             break
         log(f"user:{user}")
-        if user.strip() == "/status":
-            reply = status()
-            colored = color(reply, SETTINGS.green)
-        elif user.strip() == "/time":
-            reply = current_time()
-            colored = reply
-        elif user.startswith("/run "):
-            reply = run_command(user.partition(" ")[2])
-            colored = reply
-        elif user.strip() == "/clear":
-            reply = clear_screen()
-            colored = reply
-        elif user.startswith("/history"):
-            parts = user.split()
-            limit = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 20
-            reply = history(limit)
-            colored = reply
-        elif user.strip() == "/help":
-            reply = (
-                "Commands: /status, /time, /run <cmd>, /summarize [term [limit]], "
-                "/clear, /history [N]\n"
-                "Config: ~/.letsgo/config for prompt and colors"
-            )
-            colored = reply
-        elif user.startswith("/summarize"):
-            parts = user.split()[1:]
-            limit = 5
-            if parts and parts[-1].isdigit():
-                limit = int(parts[-1])
-                parts = parts[:-1]
-            term = " ".join(parts) if parts else None
-            reply = summarize(term, limit)
-            colored = reply
+        parts = user.split()
+        if not parts:
+            continue
+        cmd, *args = parts
+        ARGS = args
+        handler = COMMAND_HANDLERS.get(cmd)
+        if handler:
+            reply = handler()
+            if cmd == "/status":
+                colored = color(reply, SETTINGS.green)
+            else:
+                colored = reply
         else:
-            reply = f"echo: {user}"
+            reply = unknown_command(user)
             colored = reply
         print(colored)
         log(f"letsgo:{reply}")
