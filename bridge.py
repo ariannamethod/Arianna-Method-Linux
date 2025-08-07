@@ -335,6 +335,7 @@ async def start_bot() -> None:
     if not token:
         return
     application = ApplicationBuilder().token(token).build()
+    # Ensure command descriptions are lowercase for proper Telegram menu display
     commands = [
         BotCommand(cmd[1:], desc.lower()) for cmd, (_, desc) in CORE_COMMANDS.items()
     ]

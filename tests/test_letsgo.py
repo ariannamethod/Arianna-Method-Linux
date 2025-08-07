@@ -207,3 +207,8 @@ def test_color_setting_persisted(tmp_path, monkeypatch):
     monkeypatch.setattr(letsgo, "USE_COLOR", True)
     asyncio.run(letsgo.handle_color("/color off"))
     assert "use_color=False" in config.read_text()
+
+
+def test_core_commands_descriptions_lowercase():
+    for _, (_, desc) in letsgo.CORE_COMMANDS.items():
+        assert desc[0].islower()
