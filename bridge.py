@@ -295,6 +295,8 @@ async def start_bot() -> None:
     if not token:
         return
     application = ApplicationBuilder().token(token).build()
+    # Ensure no pending webhook or polling sessions remain
+    await application.bot.delete_webhook(drop_pending_updates=True)
     commands = [BotCommand(cmd[1:], desc) for cmd, (_, desc) in CORE_COMMANDS.items()]
     await application.bot.set_my_commands(commands)
     application.add_handler(CommandHandler("start", start))
