@@ -106,10 +106,9 @@ class LetsGoProcess:
             self.proc = None
 
 
-letsgo = LetsGoProcess()
 sessions: Dict[str, LetsGoProcess] = {}
-user_sessions: Dict[int, LetsGoProcess] = {}
-_user_last_active: Dict[int, float] = {}
+_user_procs: Dict[str, LetsGoProcess] = {}
+_user_last_active: Dict[str, float] = {}
 SESSION_TIMEOUT = float(os.getenv("USER_SESSION_TIMEOUT", "300"))
 app = FastAPI()
 app.add_middleware(
@@ -133,12 +132,12 @@ def _check_rate(client: str) -> None:
     _last_call[client] = now
 
 
-async def _get_user_proc(user_id: int) -> LetsGoProcess:
-    proc = user_sessions.get(user_id)
+async def _get_user_proc(user_id: str) -> LetsGoProcess:
+    proc = _user_procs.get(user_id)
     if not proc:
         proc = LetsGoProcess()
         await proc.start()
-        user_sessions[user_id] = proc
+        _user_procs[user_id] = proc
     _user_last_active[user_id] = time.time()
     return proc
 
@@ -154,7 +153,7 @@ async def cleanup_user_sessions() -> None:
                 if now - last > SESSION_TIMEOUT
             ]
             for uid in stale:
-                proc = user_sessions.pop(uid, None)
+                proc = _user_procs.pop(uid, None)
                 _user_last_active.pop(uid, None)
                 if proc:
                     await proc.stop()
@@ -169,7 +168,8 @@ async def run_command(
     if credentials.password != API_TOKEN:
         raise HTTPException(status_code=401, detail="unauthorized")
     _check_rate(credentials.username)
-    output = await letsgo.run(cmd)
+    proc = await _get_user_proc(credentials.username)
+    output = await proc.run(cmd)
     return {"output": output}
 
 
@@ -240,7 +240,7 @@ async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not cmd or not user:
         return
     try:
-        proc = await _get_user_proc(user.id)
+        proc = await _get_user_proc(str(user.id))
         output = await proc.run(cmd)
     except Exception as exc:  # noqa: BLE001 - send error to user
         await update.message.reply_text(f"Error: {exc}")
@@ -303,7 +303,7 @@ async def run_execute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await update.message.reply_text("No command provided.")
         return ConversationHandler.END
     try:
-        proc = await _get_user_proc(user.id)
+        proc = await _get_user_proc(str(user.id))
         output = await proc.run(cmd)
         await update.message.reply_text(output)
     except Exception as exc:  # noqa: BLE001 - send error to user
@@ -316,6 +316,19 @@ async def run_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not user:
+        return
+    uid = str(user.id)
+    proc = _user_procs.pop(uid, None)
+    _user_last_active.pop(uid, None)
+    if proc:
+        await proc.stop()
+    if update.message:
+        await update.message.reply_text("Logged out.")
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if not query:
@@ -324,7 +337,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user = update.effective_user
     if not user:
         return
-    proc = await _get_user_proc(user.id)
+    proc = await _get_user_proc(str(user.id))
     output = await proc.run(cmd)
     await query.answer()
     await query.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
@@ -338,9 +351,11 @@ async def start_bot() -> None:
     commands = [
         BotCommand(cmd[1:], desc.lower()) for cmd, (_, desc) in CORE_COMMANDS.items()
     ]
+    commands.append(BotCommand("logout", "terminate session"))
     await application.bot.set_my_commands(commands)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("logout", logout))
     run_conv = ConversationHandler(
         entry_points=[CommandHandler("run", run_start)],
         states={
@@ -364,7 +379,6 @@ async def start_bot() -> None:
 
 
 async def main() -> None:
-    await letsgo.start()
     server = uvicorn.Server(
         uvicorn.Config(
             app,
