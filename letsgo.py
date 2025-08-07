@@ -396,6 +396,10 @@ async def handle_help(user: str) -> Tuple[str, str | None]:
     lines: list[str] = []
     for cmd, (_, desc) in sorted(COMMAND_MAP.items()):
         lines.append(f"{cmd} - {desc}")
+    lines.append(
+        "\nExtras: use the menu for the web terminal, the quick-action keyboard,"
+        " and inline queries to run commands from the input field."
+    )
     reply = "\n".join(lines)
     return reply, reply
 
@@ -465,7 +469,10 @@ COMMAND_HELP: Dict[str, str] = {
     ),
     "/clear": "Usage: /clear\nClear the terminal screen.",
     "/history": "Usage: /history [n]\nShow the last n commands.",
-    "/help": "Usage: /help [command]\nList commands or show detailed help.",
+    "/help": (
+        "Usage: /help [command]\nList commands or show detailed help."
+        "\nFeatures: quick action keyboard, web terminal menu, inline queries."
+    ),
     "/search": "Usage: /search <pattern>\nSearch the command history.",
     "/ping": "Usage: /ping\nReply with pong.",
     "/color": "Usage: /color on|off\nEnable or disable colored output.",

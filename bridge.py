@@ -20,16 +20,23 @@ from telegram import (
     BotCommand,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    MenuButtonWebApp,
+    ReplyKeyboardMarkup,
+    WebAppInfo,
 )
+from telegram.constants import ChatAction
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
+    InlineQueryHandler,
     MessageHandler,
     filters,
 )
+from telegram import InlineQueryResultArticle, InputTextMessageContent
+from uuid import uuid4
 from letsgo import CORE_COMMANDS
 import uvicorn
 
@@ -44,6 +51,10 @@ INLINE_KEYBOARD = InlineKeyboardMarkup(
             InlineKeyboardButton("help", callback_data="/help"),
         ]
     ]
+)
+
+QUICK_KEYBOARD = ReplyKeyboardMarkup(
+    [["/status", "/time", "/help"]], resize_keyboard=True
 )
 
 RUN_COMMAND = 0
@@ -240,6 +251,10 @@ async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not cmd or not user:
         return
     try:
+        if update.effective_chat:
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.TYPING
+            )
         proc = await _get_user_proc(user.id)
         output = await proc.run(cmd)
     except Exception as exc:  # noqa: BLE001 - send error to user
@@ -270,6 +285,10 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not tg_file or not name:
         return
     dest = Path(name)
+    if update.effective_chat:
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.TYPING
+        )
     await tg_file.download_to_drive(custom_path=str(dest))
     await update.message.reply_text(f"file {name} uploaded")
 
@@ -278,7 +297,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     commands = "\n".join(f"{cmd} - {desc}" for cmd, (_, desc) in CORE_COMMANDS.items())
     await update.message.reply_text(
         "Welcome! Available commands:\n" + commands,
-        reply_markup=INLINE_KEYBOARD,
+        reply_markup=QUICK_KEYBOARD,
     )
 
 
@@ -303,6 +322,10 @@ async def run_execute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await update.message.reply_text("No command provided.")
         return ConversationHandler.END
     try:
+        if update.effective_chat:
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action=ChatAction.TYPING
+            )
         proc = await _get_user_proc(user.id)
         output = await proc.run(cmd)
         await update.message.reply_text(output)
@@ -324,10 +347,37 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user = update.effective_user
     if not user:
         return
+    if update.effective_chat:
+        await context.bot.send_chat_action(
+            chat_id=update.effective_chat.id, action=ChatAction.TYPING
+        )
     proc = await _get_user_proc(user.id)
     output = await proc.run(cmd)
     await query.answer()
     await query.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
+
+
+async def handle_inline_query(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    inline = update.inline_query
+    if not inline:
+        return
+    query = inline.query.strip()
+    if not query:
+        await inline.answer([])
+        return
+    try:
+        proc = await _get_user_proc(update.effective_user.id)
+        output = await proc.run(query)
+    except Exception as exc:  # noqa: BLE001 - send error to user
+        output = f"Error: {exc}"
+    result = InlineQueryResultArticle(
+        id=str(uuid4()),
+        title="Run command",
+        input_message_content=InputTextMessageContent(output),
+    )
+    await inline.answer([result])
 
 
 async def start_bot() -> None:
@@ -339,6 +389,10 @@ async def start_bot() -> None:
         BotCommand(cmd[1:], desc.lower()) for cmd, (_, desc) in CORE_COMMANDS.items()
     ]
     await application.bot.set_my_commands(commands)
+    web_app_url = os.getenv("WEB_APP_URL", "https://example.com/arianna_terminal.html")
+    await application.bot.set_chat_menu_button(
+        MenuButtonWebApp(text="Terminal", web_app=WebAppInfo(url=web_app_url))
+    )
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     run_conv = ConversationHandler(
@@ -352,6 +406,7 @@ async def start_bot() -> None:
     application.add_handler(MessageHandler(filters.ATTACHMENT, handle_file))
     application.add_handler(MessageHandler(filters.COMMAND, handle_telegram))
     application.add_handler(CallbackQueryHandler(handle_callback))
+    application.add_handler(InlineQueryHandler(handle_inline_query))
     await application.initialize()
     await application.start()
     await application.updater.start_polling()
