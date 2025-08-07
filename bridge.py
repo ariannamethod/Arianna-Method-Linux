@@ -1,4 +1,5 @@
 import asyncio
+import html
 import os
 import time
 from pathlib import Path
@@ -21,6 +22,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -47,6 +49,10 @@ INLINE_KEYBOARD = InlineKeyboardMarkup(
 )
 
 RUN_COMMAND = 0
+
+
+def _code(text: str) -> str:
+    return f"<pre>{html.escape(text)}</pre>"
 
 
 class LetsGoProcess:
@@ -243,15 +249,21 @@ async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         proc = await _get_user_proc(user.id)
         output = await proc.run(cmd)
     except Exception as exc:  # noqa: BLE001 - send error to user
-        await update.message.reply_text(f"Error: {exc}")
+        await update.message.reply_text(
+            _code(f"Error: {exc}"), parse_mode=ParseMode.HTML
+        )
         return
     if not output:
         return
     base = cmd.split()[0]
     if base in MAIN_COMMANDS:
-        await update.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
+        await update.message.reply_text(
+            _code(output),
+            parse_mode=ParseMode.HTML,
+            reply_markup=INLINE_KEYBOARD,
+        )
     else:
-        await update.message.reply_text(output)
+        await update.message.reply_text(_code(output), parse_mode=ParseMode.HTML)
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -271,13 +283,16 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     dest = Path(name)
     await tg_file.download_to_drive(custom_path=str(dest))
-    await update.message.reply_text(f"file {name} uploaded")
+    await update.message.reply_text(
+        _code(f"file {name} uploaded"), parse_mode=ParseMode.HTML
+    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     commands = "\n".join(f"{cmd} - {desc}" for cmd, (_, desc) in CORE_COMMANDS.items())
     await update.message.reply_text(
-        "Welcome! Available commands:\n" + commands,
+        _code("Welcome! Available commands:\n" + commands),
+        parse_mode=ParseMode.HTML,
         reply_markup=INLINE_KEYBOARD,
     )
 
@@ -292,7 +307,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def run_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Send the command to run.")
+    await update.message.reply_text(
+        _code("Send the command to run."), parse_mode=ParseMode.HTML
+    )
     return RUN_COMMAND
 
 
@@ -300,19 +317,23 @@ async def run_execute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     cmd = update.message.text if update.message else ""
     user = update.effective_user
     if not cmd or not user:
-        await update.message.reply_text("No command provided.")
+        await update.message.reply_text(
+            _code("No command provided."), parse_mode=ParseMode.HTML
+        )
         return ConversationHandler.END
     try:
         proc = await _get_user_proc(user.id)
         output = await proc.run(cmd)
-        await update.message.reply_text(output)
+        await update.message.reply_text(_code(output), parse_mode=ParseMode.HTML)
     except Exception as exc:  # noqa: BLE001 - send error to user
-        await update.message.reply_text(f"Error: {exc}")
+        await update.message.reply_text(
+            _code(f"Error: {exc}"), parse_mode=ParseMode.HTML
+        )
     return ConversationHandler.END
 
 
 async def run_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Cancelled.")
+    await update.message.reply_text(_code("Cancelled."), parse_mode=ParseMode.HTML)
     return ConversationHandler.END
 
 
@@ -327,7 +348,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     proc = await _get_user_proc(user.id)
     output = await proc.run(cmd)
     await query.answer()
-    await query.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
+    await query.message.reply_text(
+        _code(output),
+        parse_mode=ParseMode.HTML,
+        reply_markup=INLINE_KEYBOARD,
+    )
 
 
 async def start_bot() -> None:
