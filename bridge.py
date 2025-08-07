@@ -20,16 +20,23 @@ from telegram import (
     BotCommand,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
 )
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
+    InlineQueryHandler,
     MessageHandler,
     filters,
 )
+import html
 from letsgo import CORE_COMMANDS
 import uvicorn
 
@@ -46,7 +53,16 @@ INLINE_KEYBOARD = InlineKeyboardMarkup(
     ]
 )
 
-RUN_COMMAND = 0
+RUN_COMMAND, SETTINGS_MENU = range(2)
+
+SETTINGS_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["Color: On", "Color: Off"],
+        ["Language: EN", "Language: RU"],
+        ["Done"],
+    ],
+    resize_keyboard=True,
+)
 
 
 class LetsGoProcess:
@@ -110,6 +126,7 @@ letsgo = LetsGoProcess()
 sessions: Dict[str, LetsGoProcess] = {}
 user_sessions: Dict[int, LetsGoProcess] = {}
 _user_last_active: Dict[int, float] = {}
+USER_SETTINGS: Dict[int, Dict[str, str | bool]] = {}
 SESSION_TIMEOUT = float(os.getenv("USER_SESSION_TIMEOUT", "300"))
 app = FastAPI()
 app.add_middleware(
@@ -141,6 +158,15 @@ async def _get_user_proc(user_id: int) -> LetsGoProcess:
         user_sessions[user_id] = proc
     _user_last_active[user_id] = time.time()
     return proc
+
+
+async def _send_typing(bot, chat_id: int) -> None:
+    try:
+        while True:
+            await bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+            await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        pass
 
 
 async def cleanup_user_sessions() -> None:
@@ -239,19 +265,35 @@ async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user = update.effective_user
     if not cmd or not user:
         return
+    typing_task = asyncio.create_task(
+        _send_typing(context.bot, update.effective_chat.id)
+    )
     try:
         proc = await _get_user_proc(user.id)
         output = await proc.run(cmd)
     except Exception as exc:  # noqa: BLE001 - send error to user
-        await update.message.reply_text(f"Error: {exc}")
+        await update.message.reply_text(
+            f"<code>Error: {html.escape(str(exc))}</code>",
+            parse_mode=ParseMode.HTML,
+        )
         return
+    finally:
+        typing_task.cancel()
     if not output:
         return
     base = cmd.split()[0]
+    formatted = f"<pre>{html.escape(output)}</pre>"
     if base in MAIN_COMMANDS:
-        await update.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
+        await update.message.reply_text(
+            formatted,
+            reply_markup=INLINE_KEYBOARD,
+            parse_mode=ParseMode.HTML,
+        )
     else:
-        await update.message.reply_text(output)
+        await update.message.reply_text(
+            formatted,
+            parse_mode=ParseMode.HTML,
+        )
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -302,18 +344,71 @@ async def run_execute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if not cmd or not user:
         await update.message.reply_text("No command provided.")
         return ConversationHandler.END
+    typing_task = asyncio.create_task(
+        _send_typing(context.bot, update.effective_chat.id)
+    )
     try:
         proc = await _get_user_proc(user.id)
         output = await proc.run(cmd)
-        await update.message.reply_text(output)
+        await update.message.reply_text(
+            f"<pre>{html.escape(output)}</pre>", parse_mode=ParseMode.HTML
+        )
     except Exception as exc:  # noqa: BLE001 - send error to user
-        await update.message.reply_text(f"Error: {exc}")
+        await update.message.reply_text(
+            f"<code>Error: {html.escape(str(exc))}</code>",
+            parse_mode=ParseMode.HTML,
+        )
+    finally:
+        typing_task.cancel()
     return ConversationHandler.END
 
 
 async def run_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Cancelled.")
     return ConversationHandler.END
+
+
+async def settings_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Choose an option:", reply_markup=SETTINGS_KEYBOARD)
+    return SETTINGS_MENU
+
+
+async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = update.effective_user
+    if not update.message or not user:
+        return ConversationHandler.END
+    text = update.message.text
+    prefs = USER_SETTINGS.setdefault(user.id, {"color": True, "language": "EN"})
+    if text == "Color: On":
+        prefs["color"] = True
+        await update.message.reply_text(
+            "Color enabled.", reply_markup=SETTINGS_KEYBOARD
+        )
+    elif text == "Color: Off":
+        prefs["color"] = False
+        await update.message.reply_text(
+            "Color disabled.", reply_markup=SETTINGS_KEYBOARD
+        )
+    elif text == "Language: EN":
+        prefs["language"] = "EN"
+        await update.message.reply_text(
+            "Language set to EN.", reply_markup=SETTINGS_KEYBOARD
+        )
+    elif text == "Language: RU":
+        prefs["language"] = "RU"
+        await update.message.reply_text(
+            "Language set to RU.", reply_markup=SETTINGS_KEYBOARD
+        )
+    elif text == "Done":
+        await update.message.reply_text(
+            "Settings saved.", reply_markup=ReplyKeyboardRemove()
+        )
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text(
+            "Choose an option:", reply_markup=SETTINGS_KEYBOARD
+        )
+    return SETTINGS_MENU
 
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -324,10 +419,50 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user = update.effective_user
     if not user:
         return
-    proc = await _get_user_proc(user.id)
-    output = await proc.run(cmd)
+    typing_task = asyncio.create_task(_send_typing(context.bot, query.message.chat_id))
+    try:
+        proc = await _get_user_proc(user.id)
+        output = await proc.run(cmd)
+    except Exception as exc:  # noqa: BLE001 - send error to user
+        await query.answer()
+        await query.message.reply_text(
+            f"<code>Error: {html.escape(str(exc))}</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    finally:
+        typing_task.cancel()
     await query.answer()
-    await query.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
+    await query.message.reply_text(
+        f"<pre>{html.escape(output)}</pre>",
+        reply_markup=INLINE_KEYBOARD,
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    iq = update.inline_query
+    if not iq:
+        return
+    user = update.effective_user
+    query = iq.query
+    if not query or not user:
+        await iq.answer([])
+        return
+    try:
+        proc = await _get_user_proc(user.id)
+        output = await proc.run(query)
+    except Exception as exc:  # noqa: BLE001 - return error message
+        output = f"Error: {html.escape(str(exc))}"
+    result = InlineQueryResultArticle(
+        id=str(time.time()),
+        title="run",
+        input_message_content=InputTextMessageContent(
+            f"<pre>{html.escape(output)}</pre>",
+            parse_mode=ParseMode.HTML,
+        ),
+    )
+    await iq.answer([result], cache_time=0)
 
 
 async def start_bot() -> None:
@@ -338,6 +473,7 @@ async def start_bot() -> None:
     commands = [
         BotCommand(cmd[1:], desc.lower()) for cmd, (_, desc) in CORE_COMMANDS.items()
     ]
+    commands.append(BotCommand("settings", "configure bot"))
     await application.bot.set_my_commands(commands)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -348,10 +484,21 @@ async def start_bot() -> None:
         },
         fallbacks=[CommandHandler("cancel", run_cancel)],
     )
+    settings_conv = ConversationHandler(
+        entry_points=[CommandHandler("settings", settings_start)],
+        states={
+            SETTINGS_MENU: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, settings_menu)
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", run_cancel)],
+    )
     application.add_handler(run_conv)
+    application.add_handler(settings_conv)
     application.add_handler(MessageHandler(filters.ATTACHMENT, handle_file))
     application.add_handler(MessageHandler(filters.COMMAND, handle_telegram))
     application.add_handler(CallbackQueryHandler(handle_callback))
+    application.add_handler(InlineQueryHandler(inline_query))
     await application.initialize()
     await application.start()
     await application.updater.start_polling()
