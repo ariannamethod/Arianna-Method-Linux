@@ -28,6 +28,7 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
     MessageHandler,
+    PicklePersistence,
     filters,
 )
 from letsgo import CORE_COMMANDS
@@ -247,6 +248,8 @@ async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     if not output:
         return
+    context.user_data["last_command"] = cmd
+    context.chat_data["last_command"] = cmd
     base = cmd.split()[0]
     if base in MAIN_COMMANDS:
         await update.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
@@ -276,8 +279,12 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     commands = "\n".join(f"{cmd} - {desc}" for cmd, (_, desc) in CORE_COMMANDS.items())
+    msg = "Welcome! Available commands:\n" + commands
+    last_cmd = context.user_data.get("last_command")
+    if last_cmd:
+        msg += f"\nYour last command was: {last_cmd}"
     await update.message.reply_text(
-        "Welcome! Available commands:\n" + commands,
+        msg,
         reply_markup=INLINE_KEYBOARD,
     )
 
@@ -305,6 +312,8 @@ async def run_execute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     try:
         proc = await _get_user_proc(user.id)
         output = await proc.run(cmd)
+        context.user_data["last_command"] = cmd
+        context.chat_data["last_command"] = cmd
         await update.message.reply_text(output)
     except Exception as exc:  # noqa: BLE001 - send error to user
         await update.message.reply_text(f"Error: {exc}")
@@ -326,6 +335,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     proc = await _get_user_proc(user.id)
     output = await proc.run(cmd)
+    context.user_data["last_command"] = cmd
+    context.chat_data["last_command"] = cmd
     await query.answer()
     await query.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
 
@@ -334,7 +345,8 @@ async def start_bot() -> None:
     token = os.getenv("TELEGRAM_TOKEN", "").strip()
     if not token:
         return
-    application = ApplicationBuilder().token(token).build()
+    persistence = PicklePersistence(filepath="bot_data.pickle")
+    application = ApplicationBuilder().token(token).persistence(persistence).build()
     commands = [
         BotCommand(cmd[1:], desc.lower()) for cmd, (_, desc) in CORE_COMMANDS.items()
     ]
