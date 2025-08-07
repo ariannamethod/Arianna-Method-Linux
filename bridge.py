@@ -13,6 +13,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from telegram import (
     Update,
@@ -165,6 +166,21 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         sessions.pop(sid, None)
 
 
+@app.get("/upload")
+async def download_file(
+    path: str, credentials: HTTPBasicCredentials = Depends(security)
+) -> PlainTextResponse:
+    if credentials.password != API_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    _check_rate(credentials.username)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = fh.read()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="file not found")
+    return PlainTextResponse(data)
+
+
 @app.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -197,6 +213,21 @@ async def upload_ws(websocket: WebSocket) -> None:
                 fh.write(data)
     except WebSocketDisconnect:
         pass
+
+
+@app.post("/save")
+async def save_file(
+    path: str,
+    file: UploadFile = File(...),
+    credentials: HTTPBasicCredentials = Depends(security),
+) -> Dict[str, str]:
+    if credentials.password != API_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    _check_rate(credentials.username)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(await file.read())
+    return {"path": path}
 
 
 async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

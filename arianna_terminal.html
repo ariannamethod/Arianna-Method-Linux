@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <title>Arianna Terminal</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.css" />
 <style>
   body { margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
   .frame { border: 1px solid #666; margin: 8px; flex: 1; }
@@ -46,10 +47,15 @@
 <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.164.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/lib/codemirror.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5/mode/python/python.js"></script>
 <script>
+(async function() {
 if (window.Telegram && window.Telegram.WebApp) {
   window.Telegram.WebApp.ready();
 }
+const params = new URLSearchParams(location.search);
+const editPath = params.get('edit');
 const statusEl = document.getElementById('status');
 const tokenDialog = document.getElementById('token-dialog');
 const tokenInput = document.getElementById('token-input');
@@ -58,6 +64,11 @@ const container = document.getElementById('terminal-container');
 const sessions = {};
 let activeSid = null;
 let tabCount = 0;
+
+function authHeaders() {
+  const token = localStorage.getItem('amlkToken');
+  return token ? { Authorization: 'Basic ' + btoa('x:' + token) } : {};
+}
 
 const threeCanvas = document.getElementById('three-canvas');
 const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas });
@@ -83,6 +94,47 @@ function animate() {
 }
 resizeRenderer();
 animate();
+
+if (editPath) {
+  document.getElementById('controls').classList.add('hidden');
+  tabBar.classList.add('hidden');
+  container.classList.add('hidden');
+  threeCanvas.classList.add('hidden');
+  const editorWrap = document.createElement('div');
+  editorWrap.className = 'frame';
+  const textarea = document.createElement('textarea');
+  editorWrap.appendChild(textarea);
+  document.body.appendChild(editorWrap);
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'save';
+  saveBtn.style.margin = '8px';
+  document.body.appendChild(saveBtn);
+  const editor = CodeMirror.fromTextArea(textarea, { lineNumbers: true });
+  const headers = authHeaders();
+  const res = await fetch(`/upload?path=${encodeURIComponent(editPath)}`, { headers });
+  editor.setValue(await res.text());
+  saveBtn.addEventListener('click', async () => {
+    const content = editor.getValue();
+    const blob = new Blob([content], { type: 'text/plain' });
+    let data = blob;
+    if (window.Telegram && window.Telegram.WebApp) {
+      const saved = await window.Telegram.WebApp.saveFile({
+        data: await blob.arrayBuffer(),
+        file_name: editPath.split('/').pop(),
+        mime_type: 'text/plain',
+      });
+      data = await window.Telegram.WebApp.openFile({ path: saved.path });
+    }
+    const form = new FormData();
+    form.append('file', new File([data], editPath.split('/').pop(), { type: 'text/plain' }));
+    await fetch(`/save?path=${encodeURIComponent(editPath)}`, {
+      method: 'POST',
+      headers,
+      body: form,
+    });
+  });
+  return;
+}
 
 function handlePlot(dataStr) {
   let payload;
@@ -114,6 +166,14 @@ function handleModel(modelStr) {
   }
   if (mesh) scene.add(mesh);
 }
+function handleEdit(path) {
+  const url = `${location.pathname}?edit=${encodeURIComponent(path)}`;
+  if (window.Telegram && window.Telegram.WebApp) {
+    window.Telegram.WebApp.openLink(url, { try_browser: true });
+  } else {
+    window.open(url, '_blank');
+  }
+}
 function setStatus(state) {
   statusEl.textContent = state;
   statusEl.className = state;
@@ -137,6 +197,8 @@ function connect(sid, term) {
         handlePlot(line.slice(8));
       } else if (line.startsWith('__MODEL__')) {
         handleModel(line.slice(9));
+      } else if (line.startsWith('__EDIT__')) {
+        handleEdit(line.slice(8));
       } else if (line) {
         out += '\r\n' + line;
       }
@@ -264,11 +326,12 @@ document.addEventListener('drop', async ev => {
     const opened = await window.Telegram.WebApp.openFile({ path: saved.path });
     const form = new FormData();
     form.append('file', new File([opened], file.name, { type: file.type }));
-    await fetch('/upload', { method: 'POST', body: form });
+    await fetch('/upload', { method: 'POST', headers: authHeaders(), body: form });
   } catch (err) {
     console.error('upload failed', err);
   }
 });
+})();
 </script>
 </body>
 </html>

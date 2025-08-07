@@ -222,3 +222,22 @@ def test_handle_upload_missing_file(tmp_path, monkeypatch):
         assert colored.startswith("\033[31m")
     else:
         assert colored is not None
+
+
+def test_handle_edit_sends_signal(tmp_path, monkeypatch, capsys):
+    p = tmp_path / "data.txt"
+    p.write_text("x")
+    monkeypatch.chdir(tmp_path)
+    output, _ = asyncio.run(letsgo.handle_edit(f"edit {p.name}"))
+    captured = capsys.readouterr().out
+    assert f"__EDIT__{p.name}" in captured
+    assert "editing" in output
+
+
+def test_handle_edit_missing_file(tmp_path):
+    output, colored = asyncio.run(letsgo.handle_edit("edit nope.txt"))
+    assert "File not found" in output
+    if letsgo.USE_COLOR:
+        assert colored.startswith("\033[31m")
+    else:
+        assert colored is not None

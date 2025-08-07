@@ -458,6 +458,20 @@ async def handle_upload(user: str) -> Tuple[str, str | None]:
     return reply, reply
 
 
+async def handle_edit(user: str) -> Tuple[str, str | None]:
+    parts = user.split(maxsplit=1)
+    if len(parts) != 2:
+        reply = "Usage: edit <path>"
+        return reply, reply
+    path = Path(parts[1])
+    if not path.is_file():
+        reply = f"File not found: {path}"
+        return reply, color(reply, SETTINGS.red)
+    print(f"__EDIT__{path}")
+    reply = f"editing {path}"
+    return reply, reply
+
+
 CORE_COMMANDS: Dict[str, Tuple[Handler, str]] = {
     "/status": (handle_status, "show basic system metrics"),
     "/time": (handle_time, "show current UTC time"),
@@ -473,6 +487,7 @@ CORE_COMMANDS: Dict[str, Tuple[Handler, str]] = {
     "/ping": (handle_ping, "reply with pong"),
     "/color": (handle_color, "toggle colored output"),
     "/upload": (handle_upload, "copy uploaded file to current directory"),
+    "edit": (handle_edit, "open file in web editor"),
 }
 
 COMMAND_HELP: Dict[str, str] = {
