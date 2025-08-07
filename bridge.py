@@ -261,7 +261,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def start_bot() -> None:
-    token = os.getenv("TELEGRAM_TOKEN")
+    token = os.getenv("TELEGRAM_TOKEN", "").strip()
     if not token:
         return
     application = ApplicationBuilder().token(token).build()
