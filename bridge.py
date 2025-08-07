@@ -2,6 +2,7 @@ import asyncio
 import os
 import time
 from typing import Dict
+import shutil
 
 from fastapi import (
     Depends,
@@ -31,6 +32,8 @@ from telegram.ext import (
 )
 from letsgo import CORE_COMMANDS
 import uvicorn
+
+os.environ.setdefault("TERM", "xterm")
 
 PROMPT = ">>"
 
@@ -210,6 +213,9 @@ async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception as exc:  # noqa: BLE001 - send error to user
         await update.message.reply_text(f"Error: {exc}")
         return
+    if not output:
+        await update.message.reply_text("No output")
+        return
     base = cmd.split()[0]
     if base in MAIN_COMMANDS:
         await update.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
@@ -246,7 +252,10 @@ async def run_execute(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
     try:
         output = await letsgo.run(cmd)
-        await update.message.reply_text(output)
+        if output:
+            await update.message.reply_text(output)
+        else:
+            await update.message.reply_text("No output")
     except Exception as exc:  # noqa: BLE001 - send error to user
         await update.message.reply_text(f"Error: {exc}")
     return ConversationHandler.END
@@ -257,6 +266,31 @@ async def run_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    attachment = update.message.effective_attachment
+    if not attachment:
+        return
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+    async def _save(obj) -> None:
+        file = await obj.get_file()
+        name = getattr(obj, "file_name", os.path.basename(file.file_path))
+        safe_name = os.path.basename(name)
+        dest = os.path.join(os.getcwd(), safe_name)
+        await file.download_to_drive(custom_path=dest)
+        shutil.copy(dest, os.path.join(UPLOAD_DIR, safe_name))
+
+    if isinstance(attachment, list):
+        for item in attachment:
+            await _save(item)
+    else:
+        await _save(attachment)
+
+    await update.message.reply_text("file uploaded")
+
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if not query:
@@ -264,7 +298,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     cmd = query.data or ""
     output = await letsgo.run(cmd)
     await query.answer()
-    await query.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
+    if output:
+        await query.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
+    else:
+        await query.message.reply_text("No output", reply_markup=INLINE_KEYBOARD)
 
 
 async def start_bot() -> None:
@@ -284,6 +321,7 @@ async def start_bot() -> None:
         fallbacks=[CommandHandler("cancel", run_cancel)],
     )
     application.add_handler(run_conv)
+    application.add_handler(MessageHandler(filters.ATTACHMENT, handle_file))
     application.add_handler(MessageHandler(filters.COMMAND, handle_telegram))
     application.add_handler(CallbackQueryHandler(handle_callback))
     await application.initialize()

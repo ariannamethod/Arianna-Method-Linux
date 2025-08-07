@@ -26,6 +26,8 @@ from dataclasses import dataclass, asdict
 import re
 import shutil
 
+os.environ.setdefault("TERM", "xterm")
+
 _NO_COLOR_FLAG = "--no-color"
 USE_COLOR = (
     os.getenv("LETSGO_NO_COLOR") is None
@@ -421,27 +423,6 @@ async def handle_search(user: str) -> Tuple[str, str | None]:
     return reply, reply
 
 
-async def handle_plot(user: str) -> Tuple[str, str | None]:
-    data = user.partition(" ")[2].strip()
-    if not data:
-        reply = "Usage: plot <data>"
-        return reply, reply
-    print(f"__PLOT__{data}")
-    reply = "plot data sent"
-    return reply, reply
-
-
-async def handle_show(user: str) -> Tuple[str, str | None]:
-    parts = user.split(maxsplit=2)
-    if len(parts) < 3 or parts[1].lower() != "3d":
-        reply = "Usage: show 3d <model>"
-        return reply, reply
-    model = parts[2]
-    print(f"__MODEL__{model}")
-    reply = f"showing 3d {model}"
-    return reply, reply
-
-
 async def handle_ping(_: str) -> Tuple[str, str | None]:
     reply = "pong"
     return reply, reply
@@ -488,8 +469,6 @@ CORE_COMMANDS: Dict[str, Tuple[Handler, str]] = {
     "/history": (handle_history, "show command history"),
     "/help": (handle_help, "show this help message"),
     "/search": (handle_search, "search command history"),
-    "plot": (handle_plot, "send 3D plot data to webapp"),
-    "show": (handle_show, "render a 3d model in webapp"),
     "/ping": (handle_ping, "reply with pong"),
     "/color": (handle_color, "toggle colored output"),
     "/upload": (handle_upload, "copy uploaded file to current directory"),
