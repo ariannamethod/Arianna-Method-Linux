@@ -3,6 +3,7 @@ import os
 import time
 from pathlib import Path
 from typing import Dict
+import pwd
 
 from fastapi import (
     Depends,
@@ -57,12 +58,21 @@ class LetsGoProcess:
         self._lock = asyncio.Lock()
 
     async def start(self) -> None:
+        def demote() -> None:
+            try:
+                nobody = pwd.getpwnam("nobody")
+                os.setgid(nobody.pw_gid)
+                os.setuid(nobody.pw_uid)
+            except KeyError:
+                pass
+
         self.proc = await asyncio.create_subprocess_exec(
             "python",
             "letsgo.py",
             "--no-color",
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
+            preexec_fn=demote,
         )
         await self._read_until_prompt()
 

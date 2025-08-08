@@ -10,6 +10,8 @@ import readline
 import atexit
 import asyncio
 import importlib.metadata as importlib_metadata
+import shlex
+import pwd
 from datetime import datetime
 from pathlib import Path
 from collections import deque
@@ -119,6 +121,29 @@ PY_TIMEOUT = 5
 ERROR_LOG_PATH = LOG_DIR / "errors.log"
 
 Handler = Callable[[str], Awaitable[Tuple[str, str | None]]]
+
+# Allowed commands for /run
+SAFE_RUN_COMMANDS = {"ls", "cat", "echo", "pwd", "date"}
+
+
+def _sanitize_command(cmd: str) -> str | None:
+    """Return a safely quoted command if allowed, else None."""
+    try:
+        parts = shlex.split(cmd)
+    except ValueError:
+        return None
+    if not parts or parts[0] not in SAFE_RUN_COMMANDS:
+        return None
+    return " ".join(shlex.quote(part) for part in parts)
+
+
+def _has_run_permission() -> bool:
+    """Check if current user is allowed to run unsafe operations."""
+    allowed = {u for u in os.getenv("LETSGO_ALLOWED_USERS", "").split(",") if u}
+    if not allowed:
+        return True
+    user = pwd.getpwuid(os.geteuid()).pw_name
+    return user in allowed
 
 
 def _ensure_log_dir() -> None:
@@ -324,8 +349,15 @@ async def handle_time(_: str) -> Tuple[str, str | None]:
 
 async def handle_run(user: str) -> Tuple[str, str | None]:
     command = user.partition(" ")[2]
+    if not _has_run_permission():
+        reply = "insufficient permissions to run commands"
+        return reply, color(reply, SETTINGS.red)
+    sanitized = _sanitize_command(command)
+    if sanitized is None:
+        reply = "command not allowed"
+        return reply, color(reply, SETTINGS.red)
     print("выполняется...")
-    output, rc, duration = await run_command(command)
+    output, rc, duration = await run_command(sanitized)
     if output:
         if rc != 0:
             print(color(output, SETTINGS.red))
@@ -334,7 +366,7 @@ async def handle_run(user: str) -> Tuple[str, str | None]:
     status = f"код возврата: {rc}, длительность: {duration:.2f}s"
     if rc != 0:
         print(color(status, SETTINGS.red))
-        log_error(f"{command} | {status} | {output}")
+        log_error(f"{sanitized} | {status} | {output}")
     else:
         print(color(status, SETTINGS.green))
     reply = "\n".join(filter(None, [output, status]))
@@ -342,6 +374,9 @@ async def handle_run(user: str) -> Tuple[str, str | None]:
 
 
 async def handle_py(user: str) -> Tuple[str, str | None]:
+    if not _has_run_permission():
+        reply = "insufficient permissions to run code"
+        return reply, color(reply, SETTINGS.red)
     code = user.partition(" ")[2]
     if not code:
         reply = "Usage: /py <code>"
