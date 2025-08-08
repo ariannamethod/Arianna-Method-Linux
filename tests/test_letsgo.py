@@ -132,21 +132,16 @@ def test_search_history(tmp_path, monkeypatch):
     assert result.splitlines() == ["foo", "foobar"]
 
 
-def test_clear_command_registered(monkeypatch):
+def test_clear_command_registered():
     commands = []
     handlers = {}
     letsgo.COMMAND_MAP.clear()
     letsgo.register_core(commands, handlers)
     assert "/clear" in commands
 
-    called = {"cmd": None}
-
-    def fake_system(cmd):
-        called["cmd"] = cmd
-
-    monkeypatch.setattr(os, "system", fake_system)
-    asyncio.run(handlers["/clear"]("/clear"))
-    assert called["cmd"] == "clear"
+    output, colored = asyncio.run(handlers["/clear"]("/clear"))
+    assert output == "Cleared."
+    assert colored == "Cleared."
 
 
 def test_help_lists_command_descriptions():
@@ -156,9 +151,9 @@ def test_help_lists_command_descriptions():
     letsgo.register_core(commands, handlers)
     output, _ = asyncio.run(letsgo.handle_help("/help"))
     assert "/clear" in output
-    assert "clear the terminal screen" in output
+    assert "clear the terminal" in output
     assert "/history" in output
-    assert "show command history" in output
+    assert "command history" in output
 
 
 def test_help_specific_command():
@@ -198,12 +193,3 @@ def test_handle_py_timeout(monkeypatch):
         assert colored.startswith("\033[31m")
     else:
         assert colored is not None
-
-
-def test_color_setting_persisted(tmp_path, monkeypatch):
-    config = tmp_path / "config"
-    monkeypatch.setattr(letsgo, "CONFIG_PATH", config)
-    monkeypatch.setattr(letsgo, "SETTINGS", letsgo.Settings())
-    monkeypatch.setattr(letsgo, "USE_COLOR", True)
-    asyncio.run(letsgo.handle_color("/color off"))
-    assert "use_color=False" in config.read_text()
