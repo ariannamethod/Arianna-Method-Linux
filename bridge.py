@@ -21,6 +21,7 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+from telegram.constants import ChatAction
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -237,21 +238,23 @@ async def upload_ws(websocket: WebSocket) -> None:
 async def handle_telegram(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cmd = update.message.text if update.message else ""
     user = update.effective_user
-    if not cmd or not user:
+    chat = update.effective_chat
+    if not cmd or not user or not chat:
         return
     try:
+        await chat.send_action(ChatAction.TYPING)
         proc = await _get_user_proc(user.id)
         output = await proc.run(cmd)
     except Exception as exc:  # noqa: BLE001 - send error to user
-        await update.message.reply_text(f"Error: {exc}")
+        await chat.send_message(f"Error: {exc}")
         return
     if not output:
         return
     base = cmd.split()[0]
     if base in MAIN_COMMANDS:
-        await update.message.reply_text(output, reply_markup=INLINE_KEYBOARD)
+        await chat.send_message(output, reply_markup=INLINE_KEYBOARD)
     else:
-        await update.message.reply_text(output)
+        await chat.send_message(output)
 
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
