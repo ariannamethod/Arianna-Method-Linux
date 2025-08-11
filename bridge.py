@@ -331,12 +331,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    cmd = "/help"
     if context.args:
-        cmd += " " + " ".join(context.args)
-    if update.message:
-        update.message.text = cmd
-    await handle_telegram(update, context)
+        cmd = "/help " + " ".join(context.args)
+        if update.message:
+            update.message.text = cmd
+        await handle_telegram(update, context)
+    else:
+        await start(update, context)
 
 
 async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
