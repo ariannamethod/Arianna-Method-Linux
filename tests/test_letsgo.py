@@ -165,11 +165,17 @@ def test_help_specific_command():
     letsgo.COMMAND_MAP.clear()
     letsgo.register_core(commands, handlers)
     output, _ = asyncio.run(letsgo.handle_help("/help /time"))
+    assert "/clear - clear the terminal" in output
     assert "Usage: /time" in output
 
 
 def test_help_unknown_command():
+    commands = []
+    handlers = {}
+    letsgo.COMMAND_MAP.clear()
+    letsgo.register_core(commands, handlers)
     output, _ = asyncio.run(letsgo.handle_help("/help /missing"))
+    assert "/clear - clear the terminal" in output
     assert "No help available for /missing" in output
 
 
