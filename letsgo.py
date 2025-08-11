@@ -439,17 +439,18 @@ async def handle_history(user: str) -> Tuple[str, str | None]:
 
 async def handle_help(user: str) -> Tuple[str, str | None]:
     parts = user.split(maxsplit=1)
+
+    lines = [f"{cmd} - {desc}" for cmd, (_, desc) in sorted(COMMAND_MAP.items())]
+    reply = "\n".join(lines)
+
     if len(parts) > 1:
         cmd = parts[1]
         help_text = COMMAND_HELP.get(cmd)
         if help_text:
-            return help_text, help_text
-        reply = f"No help available for {cmd}"
-        return reply, reply
-    lines: list[str] = []
-    for cmd, (_, desc) in sorted(COMMAND_MAP.items()):
-        lines.append(f"{cmd} - {desc}")
-    reply = "\n".join(lines)
+            reply = f"{reply}\n\n{help_text}"
+        else:
+            reply = f"{reply}\n\nNo help available for {cmd}"
+
     return reply, reply
 
 
