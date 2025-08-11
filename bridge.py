@@ -34,7 +34,7 @@ from telegram.ext import (
     filters,
 )
 from telegram.constants import ChatAction
-from letsgo import CORE_COMMANDS
+from letsgo import CORE_COMMANDS, COMMAND_MAP
 import uvicorn
 
 PROMPT = ">>"
@@ -322,7 +322,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    commands = "\n".join(f"{cmd} - {desc}" for cmd, (_, desc) in CORE_COMMANDS.items())
+    lines = [f"{cmd} - {desc}" for cmd, (_, desc) in sorted(COMMAND_MAP.items())]
+    commands = "\n".join(lines)
     await update.message.reply_text(
         "Welcome! Available commands:\n" + commands,
         reply_markup=build_main_keyboard(),
