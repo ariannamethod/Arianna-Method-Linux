@@ -25,6 +25,7 @@ from typing import (
 from dataclasses import dataclass, asdict
 import re
 import shutil
+from textwrap import dedent
 
 _NO_COLOR_FLAG = "--no-color"
 USE_COLOR = (
@@ -270,6 +271,90 @@ async def run_command(
         return str(exc), 1, duration
 
 
+def _format_python(code: str) -> str:
+    """Return ``code`` formatted according to Python conventions."""
+    formatted = dedent(code).strip()
+    try:
+        import black
+
+        formatted = black.format_str(formatted, mode=black.FileMode())
+    except Exception:
+        pass
+    return formatted
+
+
+def _looks_like_python(text: str) -> bool:
+    """Heuristically determine if ``text`` is Python code."""
+    if "\n" in text:
+        return True
+    keywords = {
+        "import",
+        "def",
+        "class",
+        "for",
+        "while",
+        "if",
+        "else",
+        "elif",
+        "try",
+        "except",
+        "with",
+        "return",
+        "print",
+    }
+    tokens = set(re.findall(r"\b\w+\b", text))
+    return bool(tokens & keywords)
+
+
+async def run_python(code: str) -> Tuple[str, str | None]:
+    """Format and execute Python ``code``."""
+    code = _format_python(code)
+    if not code:
+        reply = "Usage: /py <code>"
+        return reply, reply
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-I",
+            "-c",
+            code,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=PY_TIMEOUT)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.communicate()
+        reply = "execution timed out"
+        return reply, color(reply, SETTINGS.red)
+    output = stdout.decode().strip()
+    err = stderr.decode().strip()
+    if proc.returncode != 0:
+        reply = err or "error"
+        return reply, color(reply, SETTINGS.red)
+    reply = output
+    return reply, reply
+
+
+async def run_shell(command: str) -> Tuple[str, str | None]:
+    """Execute a shell ``command`` and return its output."""
+    print("выполняется...")
+    output, rc, duration = await run_command(command)
+    if output:
+        if rc != 0:
+            print(color(output, SETTINGS.red))
+        else:
+            print(output)
+    status = f"код возврата: {rc}, длительность: {duration:.2f}s"
+    if rc != 0:
+        print(color(status, SETTINGS.red))
+        log_error(f"{command} | {status} | {output}")
+    else:
+        print(color(status, SETTINGS.green))
+    reply = "\n".join(filter(None, [output, status]))
+    return reply, None
+
+
 def clear_screen() -> str:
     """Return the control sequence that clears the terminal."""
     return "\033c"
@@ -376,50 +461,12 @@ async def handle_time(_: str) -> Tuple[str, str | None]:
 
 async def handle_run(user: str) -> Tuple[str, str | None]:
     command = user.partition(" ")[2]
-    print("выполняется...")
-    output, rc, duration = await run_command(command)
-    if output:
-        if rc != 0:
-            print(color(output, SETTINGS.red))
-        else:
-            print(output)
-    status = f"код возврата: {rc}, длительность: {duration:.2f}s"
-    if rc != 0:
-        print(color(status, SETTINGS.red))
-        log_error(f"{command} | {status} | {output}")
-    else:
-        print(color(status, SETTINGS.green))
-    reply = "\n".join(filter(None, [output, status]))
-    return reply, None
+    return await run_shell(command)
 
 
 async def handle_py(user: str) -> Tuple[str, str | None]:
     code = user.partition(" ")[2]
-    if not code:
-        reply = "Usage: /py <code>"
-        return reply, reply
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-I",
-            "-c",
-            code,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=PY_TIMEOUT)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()
-        reply = "execution timed out"
-        return reply, color(reply, SETTINGS.red)
-    output = stdout.decode().strip()
-    err = stderr.decode().strip()
-    if proc.returncode != 0:
-        reply = err or "error"
-        return reply, color(reply, SETTINGS.red)
-    reply = output
-    return reply, reply
+    return await run_python(code)
 
 
 async def handle_clear(_: str) -> Tuple[str, str | None]:
@@ -585,8 +632,10 @@ async def main() -> None:
         if handler:
             reply, colored = await handler(user)
         else:
-            reply = f"Unknown command: {base}. Try /help for guidance."
-            colored = color(reply, SETTINGS.red)
+            if _looks_like_python(user):
+                reply, colored = await run_python(user)
+            else:
+                reply, colored = await run_shell(user)
         if colored is not None:
             print(colored)
         log(f"letsgo:{reply}")
