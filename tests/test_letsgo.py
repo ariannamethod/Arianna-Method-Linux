@@ -202,3 +202,14 @@ def test_handle_py_timeout(monkeypatch):
         assert colored.startswith("\033[31m")
     else:
         assert colored is not None
+
+
+def test_run_python_dedents():
+    output, colored = asyncio.run(letsgo.run_python("    print('hi')"))
+    assert output == "hi"
+    assert colored == "hi"
+
+
+def test_looks_like_python_detection():
+    assert letsgo._looks_like_python("print('x')")
+    assert not letsgo._looks_like_python("echo hi")
